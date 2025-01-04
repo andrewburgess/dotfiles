@@ -1,0 +1,45 @@
+[core]
+	{{- if eq .chezmoi.os "windows" }}
+	sshCommand = C:/Windows/System32/OpenSSH/ssh.exe
+	{{- end }}
+	autocrlf = false
+[user]
+	name = Andrew Burgess
+	email = andrew@andrewburgess.io
+	signingkey = {{ onepasswordRead "op://Personal/SSH Key/public key"}}
+[init]
+	defaultBranch = main
+[merge]
+	conflictStyle = diff3
+[pull]
+	rebase = true
+[fetch]
+	prune = true
+[diff]
+	algorithm = histogram
+[push]
+	autoSetupRemote = true
+[rerere]
+	enabled = true
+[filter "lfs"]
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
+	clean = git-lfs clean -- %f
+
+[gpg]
+	format = ssh
+[gpg "ssh"]
+{{- if eq .chezmoi.os "windows" }}
+	program = "C:/Program Files/1Password/app/8/op-ssh-sign.exe"
+{{- else if eq .chezmoi.os "linux" }}
+	program = 
+{{- else if .chezmoi.os "darwin" }}
+	program = 
+{{- end }}
+[commit]
+	gpgsign = true
+[credential "https://git.andrewburgess.io"]
+	provider = generic
+[safe]
+	directory = %(prefix)///oracle/Stacks/
