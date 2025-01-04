@@ -1,0 +1,35 @@
+export GITHUB_ACCESS_TOKEN="{{ onepasswordRead "op://Personal/GitHub/hugo"}}"
+export MFA_DEVICE="arn:aws:iam::{{ onepasswordRead "op://Work/Amazon AWS/account id"}}:mfa/andrewb-1password"
+export MFA_STS_DURATION=129600
+export AWS_SESSION_TOKEN_TTL="129600s"
+export NODE_OPTIONS=--max-old-space-size=8192
+
+# If you come from bash you might have to change your $PATH.
+export PATH=$HOME/bin:/usr/local/bin:$PATH
+
+# Path to your oh-my-zsh installation.
+export ZSH="$HOME/.oh-my-zsh"
+
+# See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
+ZSH_THEME="dstufft"
+
+zstyle ':omz:update' mode auto      # update automatically without asking
+zstyle ':omz:update' frequency 7
+
+ENABLE_CORRECTION="true"
+DISABLE_UNTRACKED_FILES_DIRTY="true"
+
+plugins=(git docker jsontools npm)
+
+source $ZSH/oh-my-zsh.sh
+
+# User configuration
+
+export MANPATH="/usr/local/man:$MANPATH"
+
+# Preferred editor for local and remote sessions
+if [[ -n $SSH_CONNECTION ]]; then
+   export EDITOR='vim'
+else
+   export EDITOR='mvim'
+fi

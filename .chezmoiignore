@@ -1,0 +1,9 @@
+{{- if ne .chezmoi.os "windows" }}
+AppData
+config/powershell.json
+readonly_OneDrive
+{{- end }}
+
+{{- if eq .chezmoi.os "windows" }}
+.zshrc
+{{- end }}

@@ -1,0 +1,6 @@
+Host git-ssh.andrewburgess.io
+{{- if eq .chezmoi.os "windows" }}
+ProxyCommand C:\bin\cloudflared access ssh --hostname %h
+{{- else }}
+ProxyCommand cloudflared access ssh --hostname %h
+{{- end }}
