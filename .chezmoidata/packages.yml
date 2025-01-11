@@ -1,0 +1,24 @@
+packages:
+  linux:
+    apt:
+      - 'git'
+      - 'neovim'
+  windows:
+    winget:
+      - 'AgileBits.1Password'
+      - 'AgileBits.1Password.CLI'
+      - 'Amazon.AWSCLI'
+      - 'Discord.Discord'
+      - 'Dropbox.Dropbox'
+      - 'Git.Git'
+      - 'JanDeDobbeleer.OhMyPosh'
+      - 'LizardByte.Sunshine'
+      - 'Microsoft.PowerShell'
+      - 'Microsoft.PowerToys'
+      - 'Microsoft.VisualStudioCode'
+      - 'Microsoft.WindowsTerminal'
+      - 'Microsoft.WSL'
+      - 'Mozilla.Firefox'
+      - 'SlackTechnologies.Slack'
+      - 'Valve.Steam'
+      - 'Zwift.Zwift'
