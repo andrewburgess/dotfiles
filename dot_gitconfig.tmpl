@@ -33,7 +33,7 @@
 {{- if eq .chezmoi.os "windows" }}
 	program = "C:/Program Files/1Password/app/8/op-ssh-sign.exe"
 {{- else if eq .chezmoi.os "linux" }}
-	program = 
+	program = "/opt/1Password/op-ssh-sign"
 {{- else if .chezmoi.os "darwin" }}
 	program = 
 {{- end }}
