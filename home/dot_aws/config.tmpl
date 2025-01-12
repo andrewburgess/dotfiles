@@ -4,6 +4,6 @@ cli_pager=
 
 [profile andrewb]
 mfa_serial=arn:aws:iam::{{ onepasswordRead "op://Work/Amazon AWS/account id"}}:mfa/andrewb
-{{- if ne .chezmoi.os "windows" -}}
+{{if ne .chezmoi.os "windows" -}}
 mfa_process=op item get "Amazon AWS" --otp
-{{- end -}}
+{{end -}}
