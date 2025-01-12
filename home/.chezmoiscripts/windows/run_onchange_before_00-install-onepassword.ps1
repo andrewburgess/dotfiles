@@ -10,3 +10,5 @@ winget install AgileBits.1Password.CLI -e
 
 # Prompt user to login to 1Password and enable CLI
 $Answer = Read-Host "Please log into 1Password and enable the CLI. Press 'y' when done."
+
+Invoke-Expression $(op signin)
