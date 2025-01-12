@@ -1,8 +1,14 @@
 packages:
   linux:
     apt:
+      - 'build-essential'
       - 'git'
       - 'neovim'
+      - 'zsh'
+
+    brew:
+      - 'awscli'
+      - 'aws-vault'
   windows:
     winget:
       - 'AgileBits.1Password'

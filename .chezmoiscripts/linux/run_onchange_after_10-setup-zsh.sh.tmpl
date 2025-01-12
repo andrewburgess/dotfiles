@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# Install oh-my-zsh
+sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+# Install zsh plugins
+mkdir -p ~/.oh-my-zsh/custom/plugins
+cd ~/.oh-my-zsh/custom/plugins
+
+git clone https://github.com/blimmer/zsh-aws-vault

@@ -1,0 +1,17 @@
+#!/bin/bash
+
+{{ if and (eq .chezmoi.os "linux") (contains "ubuntu" .oslike) -}}
+
+{{ range .packages.linux.apt }}
+sudo apt-get install -y {{ . }}
+{{ end -}}
+
+{{ end -}}
+
+# Install Homebrew
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install Homebrew packages
+{{ range .packages.linux.brew }}
+brew install {{ . }}
+{{ end -}}
