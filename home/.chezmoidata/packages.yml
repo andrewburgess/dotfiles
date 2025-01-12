@@ -11,8 +11,6 @@ packages:
       - 'aws-vault'
   windows:
     winget:
-      - 'AgileBits.1Password'
-      - 'AgileBits.1Password.CLI'
       - 'Amazon.AWSCLI'
       - 'Discord.Discord'
       - 'Dropbox.Dropbox'
