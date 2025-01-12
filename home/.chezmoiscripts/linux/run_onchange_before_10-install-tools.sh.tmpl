@@ -24,10 +24,6 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/{{ (gitHubLatestRelease "n
 RUNZSH=no sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" --keep-zshrc
 
 # Setup aws-vault
-if ! command -v aws-vault &> /dev/null; then
-    echo "aws-vault is not installed. Please install it."
-    exit 1
-fi
-
-# Read access and secret keys from op and pass them in env to aws-vault
-AWS_ACCESS_KEY_ID=$(op get item "Amazon AWS" --fields access_key) AWS_SECRET_ACCESS_KEY=$(op get item "Amazon AWS" --fields secret_key) aws-vault add andrewb --env
+AWS_ACCESS_KEY_ID=$(op item get "Amazon AWS" --fields "access key" --reveal)
+AWS_SECRET_ACCESS_KEY=$(op item get "Amazon AWS" --fields "secret key" --reveal)
+aws-vault add andrewb --env
