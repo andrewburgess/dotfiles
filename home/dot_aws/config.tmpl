@@ -1,0 +1,6 @@
+[default]
+region=us-west-2
+cli_pager=
+
+[profile andrewb]
+mfa_serial = arn:aws:iam::{{ onepasswordRead "op://Work/Amazon AWS/account id"}}:mfa/andrewb

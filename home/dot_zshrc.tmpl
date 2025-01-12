@@ -1,6 +1,4 @@
 export GITHUB_ACCESS_TOKEN="{{ onepasswordRead "op://Personal/GitHub/hugo"}}"
-export MFA_DEVICE="arn:aws:iam::{{ onepasswordRead "op://Work/Amazon AWS/account id"}}:mfa/andrewb-1password"
-export MFA_STS_DURATION=129600
 export AWS_SESSION_TOKEN_TTL="129600s"
 export NODE_OPTIONS=--max-old-space-size=8192
 
