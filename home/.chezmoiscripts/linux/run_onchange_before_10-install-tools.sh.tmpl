@@ -25,5 +25,5 @@ RUNZSH=no sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tool
 
 # Setup aws-vault
 AWS_ACCESS_KEY_ID=$(op item get "Amazon AWS" --fields "access key" --reveal)
-AWS_SECRET_ACCESS_KEY=$(op item get "Amazon AWS" --fields "secret key" --reveal)
+AWS_SECRET_ACCESS_KEY=$(op item get "Amazon AWS" --fields "access secret" --reveal)
 aws-vault add andrewb --env
