@@ -16,3 +16,6 @@ eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 {{ range .packages.linux.brew }}
 brew install {{ . }}
 {{ end -}}
+
+# Install nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/{{ (gitHubLatestRelease "nvm-sh/nvm").TagName }}/install.sh | bash
