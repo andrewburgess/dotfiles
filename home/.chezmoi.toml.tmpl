@@ -8,6 +8,9 @@
 {{-   $osLike = printf "%s-%s" .chezmoi.os .chezmoi.osRelease.idLike -}}
 {{- end -}}
 
+{{- $isWSL := (.chezmoi.kernel.osrelease | lower | contains "microsoft") -}}
+
 [data]
+    iswsl = {{ $isWSL }}
     osid = {{ $osID | quote }}
     oslike = {{ $osLike | quote }}
