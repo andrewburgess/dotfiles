@@ -9,6 +9,10 @@ packages:
     brew:
       - 'awscli'
       - 'aws-vault'
+  macos:
+    brew:
+      - 'aws-vault'
+      - '1password-cli'
   windows:
     winget:
       - 'Amazon.AWSCLI'
