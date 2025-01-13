@@ -1,7 +1,7 @@
 [core]
-	{{- if eq .chezmoi.os "windows" }}
+{{- if eq .chezmoi.os "windows" }}
 	sshCommand = C:/Windows/System32/OpenSSH/ssh.exe
-	{{- end }}
+{{- end }}
 	autocrlf = false
 [user]
 	name = Andrew Burgess
