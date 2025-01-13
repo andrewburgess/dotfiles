@@ -1,5 +1,6 @@
 {{ range .packages.windows.winget -}}
 
+Write-Host "Installing {{ . }} with winget"
 winget install -e --id {{ . }}
 
 {{ end -}}
