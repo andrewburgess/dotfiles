@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# Ensure homebrew is installed
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install packages
+{{ range .packages.macos.brew }}
+brew install {{ . }}
+{{ end -}}
