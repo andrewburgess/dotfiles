@@ -2,6 +2,7 @@ $env:GITHUB_ACCESS_TOKEN="{{ onepasswordRead "op://Personal/GitHub/hugo"}}"
 $env:MFA_DEVICE="arn:aws:iam::{{ onepasswordRead "op://Work/Amazon AWS/account id"}}:mfa/andrewb-1password"
 $env:MFA_STS_DURATION=129600
 $env:AWS_SESSION_TOKEN_TTL="129600s"
+$env:EDITOR="code --wait"
 
 Import-Module posh-git
 
@@ -15,4 +16,4 @@ Set-PSReadlineKeyHandler -Key DownArrow -Function HistorySearchForward
 Set-PSReadlineOption -ShowToolTips
 Set-PSReadlineOption -PredictionSource History
 
-oh-my-posh init pwsh --config "C:\Users\andre\config\powershell.json" | Invoke-Expression
+oh-my-posh init pwsh --config "C:\Users\andre\.config\oh-my-posh\powershell.json" | Invoke-Expression

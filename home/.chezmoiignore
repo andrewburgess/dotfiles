@@ -5,7 +5,6 @@
 {{- if ne .chezmoi.os "windows" }}
 .chezmoiscripts/windows/**
 AppData
-config/powershell.json
 OneDrive
 {{- end }}
 
