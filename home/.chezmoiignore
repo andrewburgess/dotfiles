@@ -10,7 +10,7 @@ OneDrive
 {{- end }}
 
 {{- if ne .chezmoi.os "darwin" }}
-.chezmoiscripts/darwin/**
+.chezmoiscripts/macos/**
 {{- end }}
 
 {{- if ne .chezmoi.os "linux" }}
