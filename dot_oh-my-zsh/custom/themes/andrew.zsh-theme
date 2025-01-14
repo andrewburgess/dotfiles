@@ -26,6 +26,7 @@
 
 typeset -aHg AGNOSTER_PROMPT_SEGMENTS=(
     prompt_status
+		prompt_aws_vault
     prompt_context
     prompt_virtualenv
     prompt_dir
@@ -140,6 +141,12 @@ prompt_virtualenv() {
     prompt_segment $color $PRIMARY_FG
     print -Pn " $(basename $VIRTUAL_ENV) "
   fi
+}
+
+prompt_aws_vault() {
+  local vault_segment
+  vault_segment="`prompt_aws_vault_segment`"
+  [[ $vault_segment != '' ]] && prompt_segment cyan black "$vault_segment"
 }
 
 ## Main prompt
