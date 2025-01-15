@@ -17,7 +17,7 @@
           "style": "plain",
           "template": "{{ .HostName }} ",
           "foreground": "lightYellow",
-          "background": "",
+          "background": "transparent",
           "type": "session"
         },
         {
@@ -27,7 +27,7 @@
           "style": "plain",
           "template": "<#ffffff>in</> {{ .Path }} ",
           "foreground": "blue",
-          "background": "",
+          "background": "transparent",
           "type": "path"
         },
         {
@@ -70,7 +70,7 @@
           "style": "plain",
           "template": " \uf64f {{ .CurrentDate | date .Format }} ",
           "foreground": "#963f1d",
-          "background": "",
+          "background": "transparent",
           "type": "time"
         }
       ]
