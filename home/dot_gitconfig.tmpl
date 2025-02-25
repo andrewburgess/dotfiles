@@ -1,26 +1,32 @@
+[branch]
+	sort = -committerdate
+
+[column]
+	ui = auto
+
+[commit]
+	gpgsign = true
+
 [core]
 {{- if eq .chezmoi.os "windows" }}
 	sshCommand = C:/Windows/System32/OpenSSH/ssh.exe
 {{- end }}
 	autocrlf = false
-[user]
-	name = Andrew Burgess
-	email = andrew@andrewburgess.io
-	signingkey = {{ onepasswordRead "op://Personal/SSH Key/public key"}}
-[init]
-	defaultBranch = main
-[merge]
-	conflictStyle = diff3
-[pull]
-	rebase = true
-[fetch]
-	prune = true
+
+[credential "https://git.andrewburgess.io"]
+	provider = generic
+
 [diff]
 	algorithm = histogram
-[push]
-	autoSetupRemote = true
-[rerere]
-	enabled = true
+	colorMoved = plain
+	mnemonicPrefix = true
+	renames = true
+
+[fetch]
+	all = true
+	prune = true
+	pruneTags = true
+
 [filter "lfs"]
 	smudge = git-lfs smudge -- %f
 	process = git-lfs filter-process
@@ -29,6 +35,7 @@
 
 [gpg]
 	format = ssh
+
 [gpg "ssh"]
 {{- if eq .chezmoi.os "windows" }}
 	program = "C:/Program Files/1Password/app/8/op-ssh-sign.exe"
@@ -41,9 +48,38 @@
 {{- else if eq .chezmoi.os "darwin" }}
 	program = "/Applications/1Password.app/Contents/MacOS/op-ssh-sign"
 {{- end }}
-[commit]
-	gpgsign = true
-[credential "https://git.andrewburgess.io"]
-	provider = generic
+
+[help]
+	autocorrect = prompt
+
+[init]
+	defaultBranch = main
+
+[merge]
+	conflictStyle = diff3
+
+[pull]
+	rebase = true
+
+[push]
+	autoSetupRemote = true
+	default = simple
+	followTags = true
+
+[rebase]
+	updateRefs = true
+
+[rerere]
+	autoupdate = true
+	enabled = true
+
 [safe]
 	directory = %(prefix)///oracle/Stacks/
+
+[tag]
+	sort = version:refname
+
+[user]
+	name = Andrew Burgess
+	email = andrew@andrewburgess.io
+	signingkey = {{ onepasswordRead "op://Personal/SSH Key/public key"}}
