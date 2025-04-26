@@ -10,6 +10,7 @@ packages:
 
         common:
             - "git"
+            - "steam-devices"
             - "zsh"
 
         dnf:
