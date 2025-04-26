@@ -1,32 +1,37 @@
 packages:
-  linux:
-    apt:
-      - 'build-essential'
-      - 'git'
-      - 'neovim'
-      - 'zsh'
+    linux:
+        apt:
+            - "build-essential"
+            - "neovim"
 
-    brew:
-      - 'awscli'
-      - 'aws-vault'
-  macos:
-    brew:
-      - 'aws-vault'
-      - '1password-cli'
-  windows:
-    winget:
-      - 'Amazon.AWSCLI'
-      - 'Discord.Discord'
-      - 'Dropbox.Dropbox'
-      - 'Git.Git'
-      - 'JanDeDobbeleer.OhMyPosh'
-      - 'LizardByte.Sunshine'
-      - 'Microsoft.PowerShell'
-      - 'Microsoft.PowerToys'
-      - 'Microsoft.VisualStudioCode'
-      - 'Microsoft.WindowsTerminal'
-      - 'Microsoft.WSL'
-      - 'Mozilla.Firefox'
-      - 'SlackTechnologies.Slack'
-      - 'Valve.Steam'
-      - 'Zwift.Zwift'
+        brew:
+            - "awscli"
+            - "aws-vault"
+
+        common:
+            - "git"
+            - "zsh"
+
+        dnf:
+            - "1password"
+    macos:
+        brew:
+            - "aws-vault"
+            - "1password-cli"
+    windows:
+        winget:
+            - "Amazon.AWSCLI"
+            - "Discord.Discord"
+            - "Dropbox.Dropbox"
+            - "Git.Git"
+            - "JanDeDobbeleer.OhMyPosh"
+            - "LizardByte.Sunshine"
+            - "Microsoft.PowerShell"
+            - "Microsoft.PowerToys"
+            - "Microsoft.VisualStudioCode"
+            - "Microsoft.WindowsTerminal"
+            - "Microsoft.WSL"
+            - "Mozilla.Firefox"
+            - "SlackTechnologies.Slack"
+            - "Valve.Steam"
+            - "Zwift.Zwift"
