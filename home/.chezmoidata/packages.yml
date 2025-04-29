@@ -7,6 +7,7 @@ packages:
         brew:
             - "awscli"
             - "aws-vault"
+            - "starship"
 
         common:
             - "git"
