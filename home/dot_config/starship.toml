@@ -4,10 +4,59 @@
 # Inserts a blank line between shell prompts
 add_newline = true
 
-[hostname]
-disabled = false
-ssh_only = false
+# Increase the default command timeout to 2 seconds
+command_timeout = 2000
 
-[username]
-format = '[$user]($style) at '
-show_always = true
+format = """\
+[](fg:blue)\
+$directory\
+${custom.directory_separator_not_git}\
+${custom.directory_separator_git}\
+$symbol($git_branch[](fg:green))\
+$symbol( $git_commit$git_status$git_metrics$git_state)$fill$cmd_duration$nodejs$all\
+$character"""
+
+# Output the command duration if over 2 seconds
+[cmd_duration]
+min_time = 2_000
+format = "[  $duration ]($style)"
+style = "white"
+
+# Output a styled separator right after the directory when inside a git repository.
+[custom.directory_separator_git]
+description = "Output a styled separator right after the directory when inside a git repository."
+command = ""
+format = "[](fg:blue bg:green)"
+# Only when inside git repository
+when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+
+# Output a styled separator right after the directory when NOT inside a git repository.
+[custom.directory_separator_not_git]
+description = "Output a styled separator right after the directory when NOT inside a git repository."
+command = ""
+format = "[](fg:blue)"
+# Only when NOT inside a git repository
+when = "! git rev-parse --is-inside-work-tree > /dev/null 2>&1"
+
+[directory]
+truncation_symbol = "…/"
+truncate_to_repo = true
+format = "[📁 $path ](bg:blue fg:white)"
+
+# Fill character (empty space) between the left and right prompt
+[fill]
+symbol = " "
+
+[git_branch]
+symbol = " "
+format = "[ $symbol$branch(:$remote_branch) ]($style)"
+style = "fg:white bg:green"
+
+[git_metrics]
+disabled = false
+
+[nodejs]
+format ="[$symbol($version )]($style)"
+
+[package]
+disabled = true
