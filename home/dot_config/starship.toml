@@ -43,6 +43,13 @@ truncation_symbol = "…/"
 truncate_to_repo = true
 format = "[📁 $path ](bg:blue fg:white)"
 
+[custom.shell_level]
+description = "Output the shell level"
+disabled = true
+command = "echo $(for i in $(seq 1 $(($SHLVL-2))); do printf \"❯\"; done)"
+format = "[$output]($style)"
+when = "test $SHLVL -gt 2 > /dev/null 2>&1"
+
 # Fill character (empty space) between the left and right prompt
 [fill]
 symbol = " "
