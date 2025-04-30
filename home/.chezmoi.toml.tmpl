@@ -16,3 +16,10 @@
   {{- end}}
     osid = {{ $osID | quote }}
     oslike = {{ $osLike | quote }}
+
+[merge]
+    command = "zsh"
+    args = [
+        "-c",
+        "cp {{ .Target }} {{ .Target }}.base && code --new-window --wait --merge {{ .Destination }} {{ .Target }} {{ .Target }}.base {{ .Source }}",
+    ]
