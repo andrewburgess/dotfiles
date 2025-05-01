@@ -8,25 +8,25 @@ add_newline = true
 command_timeout = 2000
 
 format = """\
-[](fg:blue)\
+[](fg:#58a6ff)\
 $directory\
 ${custom.directory_separator_not_git}\
 ${custom.directory_separator_git}\
-$symbol($git_branch[](fg:green))\
+$symbol($git_branch[](fg:#1f883d))\
 $symbol( $git_commit$git_status$git_metrics$git_state)$fill$cmd_duration$nodejs$all\
 $character"""
 
 # Output the command duration if over 2 seconds
 [cmd_duration]
 min_time = 2_000
-format = "[  $duration ]($style)"
+format = "[ ⌚️ $duration ]($style)"
 style = "white"
 
 # Output a styled separator right after the directory when inside a git repository.
 [custom.directory_separator_git]
 description = "Output a styled separator right after the directory when inside a git repository."
 command = ""
-format = "[](fg:blue bg:green)"
+format = "[](fg:#58a6ff bg:#1f883d)"
 # Only when inside git repository
 when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
 
@@ -34,21 +34,14 @@ when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
 [custom.directory_separator_not_git]
 description = "Output a styled separator right after the directory when NOT inside a git repository."
 command = ""
-format = "[](fg:blue)"
+format = "[](fg:#58a6ff)"
 # Only when NOT inside a git repository
 when = "! git rev-parse --is-inside-work-tree > /dev/null 2>&1"
 
 [directory]
 truncation_symbol = "…/"
 truncate_to_repo = true
-format = "[📁 $path ](bg:blue fg:white)"
-
-[custom.shell_level]
-description = "Output the shell level"
-disabled = true
-command = "echo $(for i in $(seq 1 $(($SHLVL-2))); do printf \"❯\"; done)"
-format = "[$output]($style)"
-when = "test $SHLVL -gt 2 > /dev/null 2>&1"
+format = "[📁 $path ](bg:#58a6ff fg:#f0f6fc)"
 
 # Fill character (empty space) between the left and right prompt
 [fill]
@@ -57,7 +50,7 @@ symbol = " "
 [git_branch]
 symbol = " "
 format = "[ $symbol$branch(:$remote_branch) ]($style)"
-style = "fg:white bg:green"
+style = "fg:#f0f6fc bg:#1f883d"
 
 [git_metrics]
 disabled = false
