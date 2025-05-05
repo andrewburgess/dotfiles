@@ -1,0 +1,17 @@
+export AWS_SESSION_TOKEN_TTL="129600s"
+export GITHUB_ACCESS_TOKEN="{{ onepasswordRead "op://Personal/GitHub/hugo"}}"
+export GPG_TTY=$(tty)
+export MANPATH="/usr/local/man:$MANPATH"
+export NODE_OPTIONS="$NODE_OPTIONS --max-old-space-size=8192"
+export NVM_DIR="$HOME/.nvm"
+
+# If you come from bash you might have to change your $PATH.
+export PATH=$HOME/bin:/usr/local/bin:$PATH
+
+{{- if .iswsl }}
+export AWS_VAULT_BACKEND=pass
+{{- end }}
+
+# Path to your oh-my-zsh installation.
+export ZSH="$HOME/.oh-my-zsh"
+export ZSH_COMPDUMP=$HOME/.cache/zsh/.zcompdump

@@ -14,8 +14,12 @@ OneDrive
 
 {{- if ne .chezmoi.os "linux" }}
 .chezmoiscripts/linux/**
+
+.config/gtk-*
 {{- end }}
 
 {{- if eq .chezmoi.os "windows" }}
+.tmux.conf
+.zshenv
 .zshrc
 {{- end }}

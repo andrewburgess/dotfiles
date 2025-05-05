@@ -1,0 +1,9 @@
+windowhandle box {
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.titlebar {
+    min-height: 0px;
+    padding: 0;
+}
