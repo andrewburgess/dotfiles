@@ -41,7 +41,7 @@ when = "! git rev-parse --is-inside-work-tree > /dev/null 2>&1"
 [directory]
 truncation_symbol = "…/"
 truncate_to_repo = true
-format = "[📁 $path ](bg:#58a6ff fg:#f0f6fc)"
+format = "[📁 $path ](bg:#58a6ff fg:#f0f6fc bold)"
 
 # Fill character (empty space) between the left and right prompt
 [fill]
