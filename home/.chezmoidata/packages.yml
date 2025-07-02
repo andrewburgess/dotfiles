@@ -7,6 +7,7 @@ packages:
         brew:
             - "awscli"
             - "aws-vault"
+            - "mise"
             - "starship"
 
         common:
@@ -16,10 +17,13 @@ packages:
 
         dnf:
             - "1password"
+
     macos:
         brew:
             - "aws-vault"
             - "1password-cli"
+            - "mise"
+
     windows:
         winget:
             - "Amazon.AWSCLI"
@@ -27,6 +31,7 @@ packages:
             - "Dropbox.Dropbox"
             - "Git.Git"
             - "JanDeDobbeleer.OhMyPosh"
+            - "jdx.mise"
             - "LizardByte.Sunshine"
             - "Microsoft.PowerShell"
             - "Microsoft.PowerToys"
