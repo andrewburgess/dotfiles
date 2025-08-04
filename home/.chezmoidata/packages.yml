@@ -10,6 +10,7 @@ packages:
             - "difftastic"
             - "mise"
             - "starship"
+            - "zoxide"
 
         common:
             - "git"
