@@ -24,7 +24,10 @@ packages:
         brew:
             - "aws-vault"
             - "1password-cli"
+            - "difftastic"
             - "mise"
+            - "starship"
+            - "zoxide"
 
     windows:
         winget:
