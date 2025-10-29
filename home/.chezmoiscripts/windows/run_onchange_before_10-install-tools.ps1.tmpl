@@ -4,3 +4,5 @@ Write-Host "Installing {{ . }} with winget"
 winget install -e --id {{ . }}
 
 {{ end -}}
+
+Install-Module -Name posh-git -RequiredVersion 1.0.0

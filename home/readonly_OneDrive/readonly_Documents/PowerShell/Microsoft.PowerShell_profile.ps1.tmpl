@@ -6,8 +6,6 @@ $env:EDITOR="code --wait"
 
 Import-Module posh-git
 
-Import-Module $env:ChocolateyInstall\helpers\chocolateyProfile.psm1
-
 #Autocomplete
 Import-Module PSReadline
 Set-PSReadlineKeyHandler -Key Tab -Function MenuComplete
