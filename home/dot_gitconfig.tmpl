@@ -45,7 +45,7 @@
 
 [gpg "ssh"]
 {{- if eq .chezmoi.os "windows" }}
-	program = "C:/Program Files/1Password/app/8/op-ssh-sign.exe"
+	program = "op-ssh-sign.exe"
 {{- else if eq .chezmoi.os "linux" }}
     {{- if .iswsl }}
 	program = "/mnt/c/Program Files/1Password/app/8/op-ssh-sign-wsl"
