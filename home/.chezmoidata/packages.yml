@@ -19,6 +19,7 @@ packages:
 
         dnf:
             - "1password"
+            - "helix"
 
     macos:
         brew:
@@ -29,6 +30,7 @@ packages:
             - "helix"
             - "mise"
             - "starship"
+            - "tmux"
             - "zoxide"
 
     windows:
