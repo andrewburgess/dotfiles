@@ -22,9 +22,11 @@ packages:
 
     macos:
         brew:
+            - "awscli"
             - "aws-vault"
             - "1password-cli"
             - "difftastic"
+            - "helix"
             - "mise"
             - "starship"
             - "zoxide"
