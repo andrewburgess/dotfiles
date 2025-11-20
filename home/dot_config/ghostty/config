@@ -48,16 +48,16 @@
 # # Just for example:
 # resize-overlay-duration = 4s 200ms
 
-adjust-cell-height		= 20%
-adjust-cell-width		= -8%
-background-opacity		= 0.9
-font-family			= Monaspace Neon NF Light
-font-family-bold		= Monaspace Neon NF SemiBold
-font-family-italic		= Monaspace Neon Light Italic
-font-family-bold-italic		= Monaspace Neon NF SemiBold Italic
-font-size			= 13
-quick-terminal-size		= 80%,100%
-shell-integration-features 	= sudo,ssh-env
-theme 				= Monokai Pro Machine
+adjust-cell-height        = 20%
+adjust-cell-width         = -8%
+background-opacity        = 0.9
+font-family               = Monaspace Neon NF Light
+font-family-bold          = Monaspace Neon NF SemiBold
+font-family-italic        = Monaspace Neon Light Italic
+font-family-bold-italic   = Monaspace Neon NF SemiBold Italic
+font-size                 = 13
+quick-terminal-size       = 80%,100%
+shell-integration-feature = sudo,ssh-env
+theme                     = Monokai Pro Machine
 
 keybind = global:cmd+grave_accent=toggle_quick_terminal
