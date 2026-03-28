@@ -5,6 +5,7 @@ packages:
             - "neovim"
 
         brew:
+            - "cloudflared"
             - "difftastic"
             - "mise"
             - "starship"
@@ -26,6 +27,7 @@ packages:
     macos:
         brew:
             - "1password-cli"
+            - "cloudflared"
             - "difftastic"
             - "helix"
             - "mise"
