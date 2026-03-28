@@ -185,26 +185,18 @@ rate_bar() {
     printf "%s" "$bar"
 }
 
-# Rate limits (5h session and 7d, if available) — each on its own line
+# Rate limits (5h session and 7d, if available) — circle icons only, inline
 five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 five_resets=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
 seven_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
 seven_resets=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
-five_rate=""
-seven_rate=""
+rate_icons=""
 if [ -n "$five_pct" ]; then
-    five_icon=$(rate_circle "$five_pct")
-    five_bar=$(rate_bar "$five_pct")
-    five_countdown=""
-    [ -n "$five_resets" ] && five_countdown=" (resets in $(format_countdown "$five_resets"))"
-    five_rate=$(printf "%s 5h: %s %3.0f%%%s" "$five_icon" "$five_bar" "$five_pct" "$five_countdown")
+    rate_icons="${rate_icons}5h $(rate_circle "$five_pct")"
 fi
 if [ -n "$seven_pct" ]; then
-    seven_icon=$(rate_circle "$seven_pct")
-    seven_bar=$(rate_bar "$seven_pct")
-    seven_countdown=""
-    [ -n "$seven_resets" ] && seven_countdown=" (resets in $(format_countdown "$seven_resets"))"
-    seven_rate=$(printf "%s 7d: %s %3.0f%%%s" "$seven_icon" "$seven_bar" "$seven_pct" "$seven_countdown")
+    [ -n "$rate_icons" ] && rate_icons="${rate_icons}$(printf "${SEP_FG} | ${RESET}")"
+    rate_icons="${rate_icons}7d $(rate_circle "$seven_pct")"
 fi
 
 # Build output
@@ -223,10 +215,6 @@ if [ -n "$ctx" ]; then
     printf "${SEP_FG} | ${STATS_FG}%s${RESET}" "$ctx"
 fi
 
-# Rate limits: 5h on second line, 7d on third line (only printed if data is present)
-if [ -n "$five_rate" ]; then
-    printf "\n${STATS_FG}%s${RESET}" "$five_rate"
-fi
-if [ -n "$seven_rate" ]; then
-    printf "\n${STATS_FG}%s${RESET}" "$seven_rate"
+if [ -n "$rate_icons" ]; then
+    printf "${SEP_FG} | ${STATS_FG}%s${RESET}" "$rate_icons"
 fi
