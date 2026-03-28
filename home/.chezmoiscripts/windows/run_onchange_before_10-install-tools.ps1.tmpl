@@ -4,5 +4,12 @@ Write-Host "Installing {{ . }} with winget"
 winget install -e --id {{ . }}
 
 {{ end -}}
+{{ if .iswork -}}
+{{ range .packages.windows.winget_work -}}
 
+Write-Host "Installing {{ . }} with winget"
+winget install -e --id {{ . }}
+
+{{ end -}}
+{{ end -}}
 Install-Module -Name posh-git -RequiredVersion 1.0.0

@@ -8,6 +8,8 @@
 {{-   $osLike = printf "%s-%s" .chezmoi.os .chezmoi.osRelease.idLike -}}
 {{- end -}}
 
+{{- $iswork := promptBoolOnce . "iswork" "Is this a work machine?" -}}
+
 [data]
   {{- if (hasKey .chezmoi.kernel "osrelease") }}
     iswsl = {{ contains "microsoft" .chezmoi.kernel.osrelease }}
@@ -16,6 +18,7 @@
   {{- end}}
     osid = {{ $osID | quote }}
     oslike = {{ $osLike | quote }}
+    iswork = {{ $iswork }}
 
 [git]
     autoCommit = true

@@ -5,12 +5,14 @@ packages:
             - "neovim"
 
         brew:
-            - "awscli"
-            - "aws-vault"
             - "difftastic"
             - "mise"
             - "starship"
             - "zoxide"
+
+        brew_work:
+            - "awscli"
+            - "aws-vault"
 
         common:
             - "git"
@@ -23,8 +25,6 @@ packages:
 
     macos:
         brew:
-            - "awscli"
-            - "aws-vault"
             - "1password-cli"
             - "difftastic"
             - "helix"
@@ -33,9 +33,12 @@ packages:
             - "tmux"
             - "zoxide"
 
+        brew_work:
+            - "awscli"
+            - "aws-vault"
+
     windows:
         winget:
-            - "Amazon.AWSCLI"
             - "Discord.Discord"
             - "Dropbox.Dropbox"
             - "Git.Git"
@@ -48,6 +51,9 @@ packages:
             - "Microsoft.WindowsTerminal"
             - "Microsoft.WSL"
             - "Mozilla.Firefox"
-            - "SlackTechnologies.Slack"
             - "Valve.Steam"
             - "Zwift.Zwift"
+
+        winget_work:
+            - "Amazon.AWSCLI"
+            - "SlackTechnologies.Slack"

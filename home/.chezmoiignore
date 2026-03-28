@@ -2,6 +2,11 @@
 .oh-my-zsh/plugins/**
 .oh-my-zsh/templates/**
 
+{{- if not .iswork }}
+.aws
+.wakatime.cfg
+{{- end }}
+
 {{- if ne .chezmoi.os "windows" }}
 .chezmoiscripts/windows/**
 AppData

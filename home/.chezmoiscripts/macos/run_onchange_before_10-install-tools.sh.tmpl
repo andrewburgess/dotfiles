@@ -7,9 +7,16 @@
 {{ range .packages.macos.brew }}
 brew install {{ . }}
 {{ end -}}
+{{ if .iswork -}}
+{{ range .packages.macos.brew_work }}
+brew install {{ . }}
+{{ end -}}
+{{ end -}}
 
 # Install oh-my-zsh
 RUNZSH=no sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" --keep-zshrc
 
+{{ if .iswork -}}
 # Setup aws-vault
 AWS_ACCESS_KEY_ID=$(op item get "Amazon AWS" --fields "access key" --reveal) AWS_SECRET_ACCESS_KEY=$(op item get "Amazon AWS" --fields "access secret" --reveal) aws-vault add andrewb --env
+{{ end -}}
