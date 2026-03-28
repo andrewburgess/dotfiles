@@ -4,14 +4,17 @@
     "actions": 
     [
         {
+            "command": "find",
+            "id": "User.find"
+        },
+        {
             "command": 
             {
                 "action": "splitPane",
                 "split": "auto",
                 "splitMode": "duplicate"
             },
-            "id": "User.splitPane.A6751878",
-            "keys": "alt+shift+d"
+            "id": "User.splitPane.A6751878"
         },
         {
             "command": 
@@ -23,18 +26,11 @@
                 "name": "_quake",
                 "toggleVisibility": true
             },
-            "id": "User.globalSummon.F1E129A4",
-            "keys": "win+`"
-        },
-        {
-            "command": "find",
-            "id": "User.find",
-            "keys": "ctrl+shift+f"
+            "id": "User.globalSummon.F1E129A4"
         },
         {
             "command": "paste",
-            "id": "User.paste",
-            "keys": "ctrl+v"
+            "id": "User.paste"
         },
         {
             "command": 
@@ -42,8 +38,7 @@
                 "action": "copy",
                 "singleLine": false
             },
-            "id": "User.copy.644BA8F2",
-            "keys": "ctrl+c"
+            "id": "User.copy.644BA8F2"
         }
     ],
     "alwaysOnTop": false,
@@ -51,6 +46,29 @@
     "copyOnSelect": false,
     "defaultProfile": "{c0a2c505-0512-4f89-b6a0-59ad72f759f2}",
     "initialRows": 45,
+    "keybindings": 
+    [
+        {
+            "id": "User.splitPane.A6751878",
+            "keys": "alt+shift+d"
+        },
+        {
+            "id": "User.globalSummon.F1E129A4",
+            "keys": "win+`"
+        },
+        {
+            "id": "User.paste",
+            "keys": "ctrl+v"
+        },
+        {
+            "id": "User.find",
+            "keys": "ctrl+shift+f"
+        },
+        {
+            "id": "User.copy.644BA8F2",
+            "keys": "ctrl+c"
+        }
+    ],
     "launchMode": "maximized",
     "newTabMenu": 
     [
@@ -83,7 +101,7 @@
                 "font": 
                 {
                     "cellHeight": "1.1",
-                    "face": "FiraCode Nerd Font Mono",
+                    "face": "FiraCode Nerd Font",
                     "features": {},
                     "size": 13,
                     "weight": "normal"
@@ -102,7 +120,7 @@
                 "elevate": true,
                 "font": 
                 {
-                    "face": "MonaspiceKr Nerd Font",
+                    "face": "FiraCode Nerd Font",
                     "size": 12,
                     "weight": "normal"
                 },
@@ -211,7 +229,6 @@
         }
     ],
     "showTabsInTitlebar": false,
-    "startOnUserLogin": true,
     "themes": [],
     "windowingBehavior": "useAnyExisting"
 }
