@@ -90,5 +90,9 @@
 
 [user]
 	name = Andrew Burgess
+{{- if .iswork }}
+	email = andrewb@withhugo.com
+{{- else }}
 	email = andrew@andrewburgess.io
+{{- end }}
 	signingkey = {{ onepasswordRead "op://Personal/SSH Key/public key"}}
