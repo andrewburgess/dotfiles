@@ -17,3 +17,5 @@ Set-PSReadlineOption -ShowToolTips
 Set-PSReadlineOption -PredictionSource History
 
 oh-my-posh init pwsh --config "C:\Users\andre\.config\oh-my-posh\powershell.json" | Invoke-Expression
+
+(&mise activate pwsh) | Out-String | Invoke-Expression

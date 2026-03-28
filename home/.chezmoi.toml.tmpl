@@ -24,9 +24,19 @@
     autoCommit = true
     autoPush = true
 
+{{- if eq .chezmoi.os "windows" }}
+[merge]
+    command = "powershell"
+    args = [
+        "-NoProfile",
+        "-Command",
+        "Copy-Item '{{ "{{" }} .Target {{ "}}" }}' '{{ "{{" }} .Target {{ "}}" }}.base'; code --new-window --wait --merge '{{ "{{" }} .Destination {{ "}}" }}' '{{ "{{" }} .Target {{ "}}" }}' '{{ "{{" }} .Target {{ "}}" }}.base' '{{ "{{" }} .Source {{ "}}" }}'",
+    ]
+{{- else }}
 [merge]
     command = "zsh"
     args = [
         "-c",
         "cp {{ "{{" }} .Target {{ "}}" }} {{ "{{" }} .Target {{ "}}" }}.base && code --new-window --wait --merge {{ "{{" }} .Destination {{ "}}" }} {{ "{{" }} .Target {{ "}}" }} {{ "{{" }} .Target {{ "}}" }}.base {{ "{{" }} .Source {{ "}}" }}",
     ]
+{{- end }}
