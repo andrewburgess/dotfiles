@@ -5,11 +5,11 @@ NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Ho
 
 # Install packages
 {{ range .packages.macos.brew }}
-brew install {{ . }}
+brew list {{ . }} &>/dev/null || brew install {{ . }}
 {{ end -}}
 {{ if .iswork -}}
 {{ range .packages.macos.brew_work }}
-brew install {{ . }}
+brew list {{ . }} &>/dev/null || brew install {{ . }}
 {{ end -}}
 {{ end -}}
 
