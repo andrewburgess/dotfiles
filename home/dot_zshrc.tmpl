@@ -1,6 +1,16 @@
 zstyle ':omz:update' mode auto      # update automatically without asking
 zstyle ':omz:update' frequency 7
 
+# Show completion group headers/descriptions
+zstyle ':completion:*:descriptions' format '%F{yellow}%B-- %d --%b%f'
+
+# Keep completion groups separated (don’t collapse all matches)
+zstyle ':completion:*' group-name ''
+
+# Optional: nicer selection menu
+zstyle ':completion:*' menu select
+zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
+
 # See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
 ZSH_THEME=""
 
