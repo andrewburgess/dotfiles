@@ -135,13 +135,13 @@ fi
 rate_circle() {
     pct="$1"
     rounded=$(printf "%.0f" "$pct")
-    if [ "$rounded" -le 0 ]; then
+    if [ "$rounded" -lt 20 ]; then
         printf "○"
-    elif [ "$rounded" -le 25 ]; then
+    elif [ "$rounded" -lt 40 ]; then
         printf "◔"
-    elif [ "$rounded" -le 50 ]; then
+    elif [ "$rounded" -lt 70 ]; then
         printf "◑"
-    elif [ "$rounded" -le 75 ]; then
+    elif [ "$rounded" -lt 95 ]; then
         printf "◕"
     else
         printf "●"
