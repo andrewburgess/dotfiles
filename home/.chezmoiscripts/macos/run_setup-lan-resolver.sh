@@ -8,5 +8,12 @@ if [[ -z "$gateway" ]]; then
   exit 1
 fi
 
+current=$(cat /etc/resolver/lan 2>/dev/null)
+expected="nameserver $gateway"
+if [[ "$current" == "$expected" ]]; then
+  exit 0
+fi
+
+echo "Updating /etc/resolver/lan to point .lan domains at $gateway (requires sudo)"
 sudo mkdir -p /etc/resolver
-printf 'nameserver %s\n' "$gateway" | sudo tee /etc/resolver/lan > /dev/null
+printf '%s\n' "$expected" | sudo tee /etc/resolver/lan > /dev/null
