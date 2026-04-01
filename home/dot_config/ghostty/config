@@ -48,13 +48,13 @@
 # # Just for example:
 # resize-overlay-duration = 4s 200ms
 
-adjust-cell-height        	= 20%
-adjust-cell-width         	= -8%
-background-opacity       	= 0.8
-font-family               	= FiraCode Nerd Font
-font-size                 	= 18
-quick-terminal-size       	= 80%,100%
-shell-integration-features 	= sudo,ssh-env
-theme                     	= Monokai Pro Machine
+adjust-cell-height          = 20%
+adjust-cell-width           = -8%
+background-opacity          = 0.9
+font-family                 = FiraCode Nerd Font
+font-size                   = 14
+quick-terminal-size         = 80%,100%
+shell-integration-features  = sudo,ssh-env
+theme                       = Gruvbox Material
 
 keybind = global:cmd+grave_accent=toggle_quick_terminal
