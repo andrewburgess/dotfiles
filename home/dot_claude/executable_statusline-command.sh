@@ -95,23 +95,43 @@ EOF
     fi
 fi
 
-# Context usage progress bar (20 blocks)
+# Context usage progress bar (30 blocks, blue→red gradient on filled portion)
 ctx=""
 if [ -n "$used_pct" ]; then
-    filled=$(printf "%.0f" "$(echo "$used_pct / 5" | bc -l)")
-    [ "$filled" -gt 20 ] && filled=20
-    empty=$((20 - filled))
+    filled=$(printf "%.0f" "$(echo "$used_pct * 30 / 100" | bc -l)")
+    [ "$filled" -gt 30 ] && filled=30
+    empty=$((30 - filled))
+
+    # Interpolate each filled block from blue (88,166,255) to red (255,80,80)
+    # t for each block is its position across the full 0–100% range
     bar=""
     i=0
     while [ "$i" -lt "$filled" ]; do
-        bar="${bar}█"
+        t_num=$(echo "scale=10; ($i * 100 / 30 + 100 / 30 / 2) / 100" | bc -l)
+        tip_r=$(printf "%.0f" "$(echo "88 + (255 - 88) * $t_num" | bc -l)")
+        tip_g=$(printf "%.0f" "$(echo "166 + (80  - 166) * $t_num" | bc -l)")
+        tip_b=$(printf "%.0f" "$(echo "255 + (80  - 255) * $t_num" | bc -l)")
+        bar="${bar}$(printf '\033[38;2;%d;%d;%dm█\033[0m' "$tip_r" "$tip_g" "$tip_b")"
         i=$((i + 1))
     done
+
+    # Empty blocks use the tip color (at current fill level) but desaturated and dimmed
+    # Tip t = used_pct / 100
+    tip_r=$(printf "%.0f" "$(echo "88 + (255 - 88) * $used_pct / 100" | bc -l)")
+    tip_g=$(printf "%.0f" "$(echo "166 + (80  - 166) * $used_pct / 100" | bc -l)")
+    tip_b=$(printf "%.0f" "$(echo "255 + (80  - 255) * $used_pct / 100" | bc -l)")
+    # Desaturate toward luminance, then dim: luma = 0.299R + 0.587G + 0.114B
+    luma=$(printf "%.0f" "$(echo "0.299 * $tip_r + 0.587 * $tip_g + 0.114 * $tip_b" | bc -l)")
+    # Mix 80% toward gray (strong desaturation), then scale to 30% brightness
+    dr=$(printf "%.0f" "$(echo "($tip_r * 0.20 + $luma * 0.80) * 0.30" | bc -l)")
+    dg=$(printf "%.0f" "$(echo "($tip_g * 0.20 + $luma * 0.80) * 0.30" | bc -l)")
+    db=$(printf "%.0f" "$(echo "($tip_b * 0.20 + $luma * 0.80) * 0.30" | bc -l)")
     i=0
     while [ "$i" -lt "$empty" ]; do
-        bar="${bar}░"
+        bar="${bar}$(printf '\033[38;2;%d;%d;%dm░\033[0m' "$dr" "$dg" "$db")"
         i=$((i + 1))
     done
+
     fmt_tokens() {
         n="$1"
         if [ "$n" -ge 1000000 ]; then
@@ -128,75 +148,42 @@ if [ -n "$used_pct" ]; then
         fmt_out=$(fmt_tokens "${output_tokens:-0}")
         token_info=" (↑${fmt_in} ↓${fmt_out})"
     fi
-    ctx=$(printf "%s %.0f%%%s" "$bar" "$used_pct" "$token_info")
+    ctx=$(printf "%b %.0f%%%s" "$bar" "$used_pct" "$token_info")
 fi
 
-# Rate limit circle icon based on usage percentage
-rate_circle() {
+# Interpolate RGB from blue (88,166,255) to red (255,80,80) at a given percentage
+rate_color() {
     pct="$1"
+    r=$(printf "%.0f" "$(echo "88 + (255 - 88) * $pct / 100" | bc -l)")
+    g=$(printf "%.0f" "$(echo "166 + (80  - 166) * $pct / 100" | bc -l)")
+    b=$(printf "%.0f" "$(echo "255 + (80  - 255) * $pct / 100" | bc -l)")
+    printf '\033[38;2;%d;%d;%dm' "$r" "$g" "$b"
+}
+
+# Render a single rate limit indicator: colored circle + colored label
+rate_indicator() {
+    pct="$1"
+    label="$2"
     rounded=$(printf "%.0f" "$pct")
-    if [ "$rounded" -lt 20 ]; then
-        printf "○"
-    elif [ "$rounded" -lt 40 ]; then
-        printf "◔"
-    elif [ "$rounded" -lt 70 ]; then
-        printf "◑"
-    elif [ "$rounded" -lt 95 ]; then
-        printf "◕"
+    if [ "$rounded" -ge 50 ]; then
+        circle="●"
     else
-        printf "●"
+        circle="○"
     fi
+    color=$(rate_color "$pct")
+    printf '%b%s %s\033[0m' "$color" "$circle" "$label"
 }
 
-# Format a countdown from now until a Unix epoch timestamp
-# Output: "4h52m" for sub-day intervals, "3d12h10m" for multi-day
-format_countdown() {
-    resets_at="$1"
-    now=$(date +%s)
-    diff=$((resets_at - now))
-    [ "$diff" -le 0 ] && printf "now" && return
-    days=$((diff / 86400))
-    hours=$(( (diff % 86400) / 3600 ))
-    minutes=$(( (diff % 3600) / 60 ))
-    if [ "$days" -gt 0 ]; then
-        printf "%dd%dh%dm" "$days" "$hours" "$minutes"
-    else
-        printf "%dh%dm" "$hours" "$minutes"
-    fi
-}
-
-# Build a 20-character progress bar for a percentage value
-rate_bar() {
-    pct="$1"
-    filled=$(printf "%.0f" "$(echo "$pct / 5" | bc -l)")
-    [ "$filled" -gt 20 ] && filled=20
-    empty=$((20 - filled))
-    bar=""
-    i=0
-    while [ "$i" -lt "$filled" ]; do
-        bar="${bar}█"
-        i=$((i + 1))
-    done
-    i=0
-    while [ "$i" -lt "$empty" ]; do
-        bar="${bar}░"
-        i=$((i + 1))
-    done
-    printf "%s" "$bar"
-}
-
-# Rate limits (5h session and 7d, if available) — circle icons only, inline
+# Rate limits (5h session and 7d, if available)
 five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
-five_resets=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
 seven_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
-seven_resets=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
 rate_icons=""
 if [ -n "$five_pct" ]; then
-    rate_icons="${rate_icons}5h $(rate_circle "$five_pct")"
+    rate_icons="${rate_icons}$(rate_indicator "$five_pct" "5h")"
 fi
 if [ -n "$seven_pct" ]; then
     [ -n "$rate_icons" ] && rate_icons="${rate_icons}$(printf "${SEP_FG} | ${RESET}")"
-    rate_icons="${rate_icons}7d $(rate_circle "$seven_pct")"
+    rate_icons="${rate_icons}$(rate_indicator "$seven_pct" "7d")"
 fi
 
 # Build output
@@ -211,10 +198,18 @@ fi
 
 printf "${SEP_FG} | ${STATS_FG}%s${RESET}" "$model"
 
+second_line=""
 if [ -n "$ctx" ]; then
-    printf "${SEP_FG} | ${STATS_FG}%s${RESET}" "$ctx"
+    second_line="${second_line}$(printf "${STATS_FG}%b${RESET}" "$ctx")"
 fi
 
 if [ -n "$rate_icons" ]; then
-    printf "${SEP_FG} | ${STATS_FG}%s${RESET}" "$rate_icons"
+    if [ -n "$second_line" ]; then
+        second_line="${second_line}$(printf "${SEP_FG} | ${RESET}")"
+    fi
+    second_line="${second_line}$(printf "${STATS_FG}%b${RESET}" "$rate_icons")"
+fi
+
+if [ -n "$second_line" ]; then
+    printf "\n%b" "$second_line"
 fi
