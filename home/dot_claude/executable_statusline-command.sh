@@ -174,16 +174,106 @@ rate_indicator() {
     printf '%b%s %s\033[0m' "$color" "$circle" "$label"
 }
 
-# Rate limits (5h session and 7d, if available)
+# Detect plan type and build appropriate indicator
 five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 seven_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+session_cost=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
+
 rate_icons=""
-if [ -n "$five_pct" ]; then
-    rate_icons="${rate_icons}$(rate_indicator "$five_pct" "5h")"
+budget_indicator=""
+
+if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
+    # Rate-based plan — show rate limit indicators
+    if [ -n "$five_pct" ]; then
+        rate_icons="${rate_icons}$(rate_indicator "$five_pct" "5h")"
+    fi
+    if [ -n "$seven_pct" ]; then
+        [ -n "$rate_icons" ] && rate_icons="${rate_icons}$(printf "${SEP_FG} | ${RESET}")"
+        rate_icons="${rate_icons}$(rate_indicator "$seven_pct" "7d")"
+    fi
 fi
-if [ -n "$seven_pct" ]; then
-    [ -n "$rate_icons" ] && rate_icons="${rate_icons}$(printf "${SEP_FG} | ${RESET}")"
-    rate_icons="${rate_icons}$(rate_indicator "$seven_pct" "7d")"
+
+if [ -n "$session_cost" ]; then
+    # Dollar-based (API) plan — track monthly budget
+    MONTHLY_BUDGET=100
+    BUDGET_FILE="$HOME/.claude/budget-tracker.json"
+    current_month=$(date +%Y-%m)
+    session_id=$(echo "$input" | jq -r '.session_id // empty')
+
+    # Initialize budget file if missing or malformed
+    if [ ! -f "$BUDGET_FILE" ] || ! jq -e '.month' "$BUDGET_FILE" >/dev/null 2>&1; then
+        printf '{"month":"%s","sessions":{},"total_spent":0}' "$current_month" > "$BUDGET_FILE"
+    fi
+
+    stored_month=$(jq -r '.month' "$BUDGET_FILE")
+
+    # Reset on new month
+    if [ "$stored_month" != "$current_month" ]; then
+        printf '{"month":"%s","sessions":{},"total_spent":0}' "$current_month" > "$BUDGET_FILE"
+    fi
+
+    # Compute delta for this session
+    last_cost=$(jq -r --arg sid "$session_id" '.sessions[$sid] // 0' "$BUDGET_FILE")
+    delta=$(echo "$session_cost - $last_cost" | bc -l)
+    # Guard against negative delta (e.g., new session with same id)
+    is_negative=$(echo "$delta < 0" | bc -l)
+    [ "$is_negative" -eq 1 ] && delta="$session_cost"
+
+    # Update state
+    new_total=$(jq -r '.total_spent' "$BUDGET_FILE")
+    new_total=$(echo "$new_total + $delta" | bc -l)
+    jq --arg sid "$session_id" \
+       --argjson cost "$session_cost" \
+       --argjson total "$new_total" \
+       '.sessions[$sid] = $cost | .total_spent = $total' \
+       "$BUDGET_FILE" > "${BUDGET_FILE}.tmp" && mv "${BUDGET_FILE}.tmp" "$BUDGET_FILE"
+
+    # Compute remaining budget
+    remaining=$(echo "$MONTHLY_BUDGET - $new_total" | bc -l)
+    is_neg=$(echo "$remaining < 0" | bc -l)
+    [ "$is_neg" -eq 1 ] && remaining="0"
+    spent_pct=$(echo "scale=2; $new_total * 100 / $MONTHLY_BUDGET" | bc -l)
+    is_over=$(echo "$spent_pct > 100" | bc -l)
+    [ "$is_over" -eq 1 ] && spent_pct="100"
+
+    # Budget bar (30 blocks) — filled = remaining, color by spent_pct (blue=healthy, red=depleted)
+    remaining_pct=$(echo "100 - $spent_pct" | bc -l)
+    filled=$(printf "%.0f" "$(echo "$remaining_pct * 30 / 100" | bc -l)")
+    [ "$filled" -gt 30 ] && filled=30
+    [ "$filled" -lt 0 ] && filled=0
+    empty_blocks=$((30 - filled))
+
+    budget_bar=""
+    i=0
+    while [ "$i" -lt "$filled" ]; do
+        # Color each filled block based on spent_pct (uniform color across the bar)
+        tip_r=$(printf "%.0f" "$(echo "88 + (255 - 88) * $spent_pct / 100" | bc -l)")
+        tip_g=$(printf "%.0f" "$(echo "166 + (80  - 166) * $spent_pct / 100" | bc -l)")
+        tip_b=$(printf "%.0f" "$(echo "255 + (80  - 255) * $spent_pct / 100" | bc -l)")
+        budget_bar="${budget_bar}$(printf '\033[38;2;%d;%d;%dm█\033[0m' "$tip_r" "$tip_g" "$tip_b")"
+        i=$((i + 1))
+    done
+
+    # Empty blocks — dimmed
+    tip_r=$(printf "%.0f" "$(echo "88 + (255 - 88) * $spent_pct / 100" | bc -l)")
+    tip_g=$(printf "%.0f" "$(echo "166 + (80  - 166) * $spent_pct / 100" | bc -l)")
+    tip_b=$(printf "%.0f" "$(echo "255 + (80  - 255) * $spent_pct / 100" | bc -l)")
+    luma_b=$(printf "%.0f" "$(echo "0.299 * $tip_r + 0.587 * $tip_g + 0.114 * $tip_b" | bc -l)")
+    dr_b=$(printf "%.0f" "$(echo "($tip_r * 0.20 + $luma_b * 0.80) * 0.30" | bc -l)")
+    dg_b=$(printf "%.0f" "$(echo "($tip_g * 0.20 + $luma_b * 0.80) * 0.30" | bc -l)")
+    db_b=$(printf "%.0f" "$(echo "($tip_b * 0.20 + $luma_b * 0.80) * 0.30" | bc -l)")
+    i=0
+    while [ "$i" -lt "$empty_blocks" ]; do
+        budget_bar="${budget_bar}$(printf '\033[38;2;%d;%d;%dm░\033[0m' "$dr_b" "$dg_b" "$db_b")"
+        i=$((i + 1))
+    done
+
+    # Format dollar amounts
+    fmt_remaining=$(printf "\$%.2f" "$remaining")
+    fmt_total=$(printf "\$%.2f" "$new_total")
+    fmt_session=$(printf "\$%.2f" "$session_cost")
+
+    budget_indicator=$(printf "%b %s left (%s spent, session: %s)" "$budget_bar" "$fmt_remaining" "$fmt_total" "$fmt_session")
 fi
 
 # Build output
@@ -212,4 +302,8 @@ fi
 
 if [ -n "$second_line" ]; then
     printf "\n%b" "$second_line"
+fi
+
+if [ -n "$budget_indicator" ]; then
+    printf "\n%b" "$(printf "${STATS_FG}%b${RESET}" "$budget_indicator")"
 fi
