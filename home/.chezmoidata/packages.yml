@@ -31,6 +31,7 @@ packages:
             - "cloudflared"
             - "difftastic"
             - "gh"
+            - "git-lfs"
             - "helix"
             - "mise"
             - "starship"
