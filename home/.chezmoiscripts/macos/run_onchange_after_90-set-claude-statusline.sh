@@ -5,4 +5,4 @@ settings="$HOME/.claude/settings.json"
 [ -f "$settings" ] || exit 0
 
 tmp=$(mktemp)
-jq --arg path "$HOME/.claude/statusline-command.sh" '.statusLine = {"type": "command", "command": $path}' "$settings" > "$tmp" && mv "$tmp" "$settings"
+jq --arg path "bun $HOME/.claude/statusline-command.js" '.statusLine = {"type": "command", "command": $path}' "$settings" > "$tmp" && mv "$tmp" "$settings"
