@@ -9,6 +9,7 @@ packages:
             - "difftastic"
             - "gh"
             - "mise"
+            - "oven-sh/bun/bun"
             - "starship"
             - "zoxide"
 
@@ -34,6 +35,7 @@ packages:
             - "git-lfs"
             - "helix"
             - "mise"
+            - "oven-sh/bun/bun"
             - "starship"
             - "tmux"
             - "zoxide"
@@ -57,6 +59,7 @@ packages:
             - "Microsoft.WindowsTerminal"
             - "Microsoft.WSL"
             - "Mozilla.Firefox"
+            - "Oven-sh.Bun"
             - "Valve.Steam"
             - "Zwift.Zwift"
 
