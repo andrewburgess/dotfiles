@@ -49,7 +49,6 @@ const credentialsPlanType = detectPlanType(); // "rate" | "api" | null
 
 const raw = await Bun.stdin.text();
 const input = JSON.parse(raw || "{}");
-writeFileSync("debug.json", raw, "utf-8");
 
 const cwd = input?.workspace?.current_dir ?? input?.cwd ?? "";
 const model = input?.model?.display_name ?? "";
