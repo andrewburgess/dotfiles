@@ -27,6 +27,13 @@ function blueToRed(t) {
     return rgb(r, g, b);
 }
 
+function greenToRed(t) {
+    const r = Math.round(80 + (255 - 80) * t);
+    const g = Math.round(220 + (80 - 220) * t);
+    const b = Math.round(80 + (80 - 80) * t);
+    return rgb(r, g, b);
+}
+
 // ─── Plan detection ──────────────────────────────────────────────────────────
 
 function detectPlanType() {
@@ -174,7 +181,7 @@ function buildContextBar(pct, totalInputTokens, totalOutputTokens) {
     let bar = "";
     for (let i = 0; i < filled; i++) {
         const t = ((i * 100) / BLOCKS + 100 / BLOCKS / 2) / 100;
-        bar += `${blueToRed(t)}█${RESET}`;
+        bar += `${greenToRed(t)}█${RESET}`;
     }
     bar += `${DKGRAY}${"░".repeat(empty)}${RESET}`;
 
@@ -211,7 +218,7 @@ function rateIndicator(pct, label) {
     else if (pct >= 40) symbol = "◑";
     else if (pct >= 20) symbol = "◔";
 
-    const color = blueToRed(pct / 100);
+    const color = greenToRed(pct / 100);
     return `${color}${symbol} ${label}${RESET}`;
 }
 
@@ -265,7 +272,7 @@ function buildBudgetIndicator(sessionCost, sessionId) {
     );
     const empty = BLOCKS - filled;
     const t = spentPct / 100;
-    const color = blueToRed(t);
+    const color = greenToRed(t);
 
     let bar = `${color}${"█".repeat(filled)}${RESET}`;
     bar += `${DKGRAY}${"░".repeat(empty)}${RESET}`;
