@@ -2,7 +2,7 @@
 // Claude Code status line — Bun rewrite of statusline-command.sh
 
 import { spawnSync } from "bun";
-import { existsSync, readFileSync, write, writeFileSync } from "fs";
+import { existsSync, readFileSync, write, writeFile, writeFileSync } from "fs";
 import { basename } from "path";
 
 // ─── ANSI helpers ────────────────────────────────────────────────────────────
@@ -278,7 +278,7 @@ function buildBudgetIndicator(sessionCost, sessionId) {
     bar += `${DKGRAY}${"░".repeat(empty)}${RESET}`;
 
     const fmt = (n) => `$${n.toFixed(2)}`;
-    return `${bar} ${fmt(remaining)} left (${fmt(spent)} spent})`;
+    return `${bar} ${fmt(remaining)} / ${fmt(MONTHLY_BUDGET)}`;
 }
 
 // ─── Assemble output ──────────────────────────────────────────────────────────
@@ -289,10 +289,10 @@ const ctxBar = buildContextBar(usedPct, inputTokens, outputTokens);
 const currentSessionCost = buildSessionCost(sessionCost); // format to 2 decimals or null
 
 // Rate-based vs dollar-based plan.
-// Live data wins; fall back to credentials; if unknown skip the budget bar.
+// Live data wins; fall back to credentials
 const hasLiveRateData = fivePct !== null || sevenPct !== null;
 const isRatePlan = hasLiveRateData || credentialsPlanType === "rate";
-const isApiPlan = !hasLiveRateData && credentialsPlanType === "api";
+const isApiPlan = !hasLiveRateData && credentialsPlanType !== "rate";
 
 const rateIcons = isRatePlan ? buildRateIcons(fivePct, sevenPct) : null;
 const budgetIndicator = isApiPlan
