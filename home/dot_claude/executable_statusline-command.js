@@ -34,6 +34,15 @@ function greenToRed(t) {
     return rgb(r, g, b);
 }
 
+/**
+ * Remap a 0–1 fraction so that RED_THRESHOLD maps to t=1 (full red).
+ * Anything at or above the threshold clamps to 1.
+ */
+const RED_THRESHOLD = 0.90; // reach full red at 90% usage
+function remapToRed(t) {
+    return Math.min(1, t / RED_THRESHOLD);
+}
+
 // ─── Plan detection ──────────────────────────────────────────────────────────
 
 function detectPlanType() {
@@ -181,7 +190,7 @@ function buildContextBar(pct, totalInputTokens, totalOutputTokens) {
     let bar = "";
     for (let i = 0; i < filled; i++) {
         const t = ((i * 100) / BLOCKS + 100 / BLOCKS / 2) / 100;
-        bar += `${greenToRed(t)}█${RESET}`;
+        bar += `${greenToRed(remapToRed(t))}█${RESET}`;
     }
     bar += `${DKGRAY}${"░".repeat(empty)}${RESET}`;
 
@@ -218,7 +227,7 @@ function rateIndicator(pct, label) {
     else if (pct >= 40) symbol = "◑";
     else if (pct >= 20) symbol = "◔";
 
-    const color = greenToRed(pct / 100);
+    const color = greenToRed(remapToRed(pct / 100));
     return `${color}${symbol} ${label}${RESET}`;
 }
 
@@ -271,7 +280,7 @@ function buildBudgetIndicator(sessionCost, sessionId) {
         Math.min(BLOCKS, Math.round((remainPct * BLOCKS) / 100))
     );
     const empty = BLOCKS - filled;
-    const t = spentPct / 100;
+    const t = remapToRed(spentPct / 100);
     const color = greenToRed(t);
 
     let bar = `${color}${"█".repeat(filled)}${RESET}`;
