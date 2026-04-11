@@ -4,3 +4,4 @@ if (-not (Get-Module -ListAvailable -Name NerdFonts)) {
 }
 Import-Module -Name NerdFonts
 Install-NerdFont -Name 'FiraCode'
+Install-NerdFont -Name 'VictorMono'

@@ -49,7 +49,7 @@
 # resize-overlay-duration = 4s 200ms
 
 background-opacity       	  = 1
-font-family               	= FiraCode Nerd Font Propo
+font-family               	= VictorMono Nerd Font
 font-size                   = 15
 quick-terminal-size       	= 80%,100%
 shell-integration-features	= sudo,ssh-env
