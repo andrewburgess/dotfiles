@@ -4,10 +4,6 @@
     "actions": 
     [
         {
-            "command": "find",
-            "id": "User.find"
-        },
-        {
             "command": 
             {
                 "action": "splitPane",
@@ -15,6 +11,10 @@
                 "splitMode": "duplicate"
             },
             "id": "User.splitPane.A6751878"
+        },
+        {
+            "command": "find",
+            "id": "User.find"
         },
         {
             "command": 
@@ -57,12 +57,12 @@
             "keys": "win+`"
         },
         {
-            "id": "User.paste",
-            "keys": "ctrl+v"
-        },
-        {
             "id": "User.find",
             "keys": "ctrl+shift+f"
+        },
+        {
+            "id": "User.paste",
+            "keys": "ctrl+v"
         },
         {
             "id": "User.copy.644BA8F2",
@@ -85,9 +85,9 @@
             "experimental.retroTerminalEffect": false,
             "font": 
             {
-                "face": "FiraCode Nerd Font",
-                "size": 9,
-                "weight": "light"
+                "face": "VictorMono Nerd Font",
+                "size": 12,
+                "weight": "medium"
             },
             "opacity": 95,
             "startingDirectory": "%__CD__%"
@@ -100,11 +100,11 @@
                 "commandline": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
                 "font": 
                 {
-                    "cellHeight": "1.1",
-                    "face": "FiraCode Nerd Font",
+                    "cellHeight": "1.2",
+                    "face": "VictorMono Nerd Font",
                     "features": {},
-                    "size": 13,
-                    "weight": "normal"
+                    "size": 14,
+                    "weight": "medium"
                 },
                 "guid": "{c0a2c505-0512-4f89-b6a0-59ad72f759f2}",
                 "hidden": false,
@@ -131,28 +131,15 @@
                 "startingDirectory": "%USERPROFILE%"
             },
             {
-                "commandline": "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-                "guid": "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}",
-                "hidden": true,
-                "name": "Windows PowerShell"
-            },
-            {
                 "commandline": "%SystemRoot%\\System32\\cmd.exe",
                 "guid": "{0caa0dad-35be-5f56-a8ff-afceeeaa6101}",
                 "hidden": false,
                 "name": "Command Prompt"
             },
             {
-                "guid": "{51855cb2-8cce-5362-8f54-464b92b32386}",
+                "guid": "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}",
                 "hidden": false,
-                "name": "Ubuntu",
-                "source": "CanonicalGroupLimited.Ubuntu_79rhkp1fndgsc"
-            },
-            {
-                "guid": "{2ece5bfe-50ed-5f3a-ab87-5cd4baafed2b}",
-                "hidden": false,
-                "name": "Git Bash",
-                "source": "Git"
+                "name": "Windows PowerShell"
             }
         ]
     },
