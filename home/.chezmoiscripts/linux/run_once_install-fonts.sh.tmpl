@@ -7,3 +7,9 @@ exit 0
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 brew list --cask font-fira-code-nerd-font &>/dev/null || brew install --cask font-fira-code-nerd-font
 brew list --cask font-victor-mono-nerd-font &>/dev/null || brew install --cask font-victor-mono-nerd-font
+
+# Remove VictorMono italic variants
+find ~/.local/share/fonts /usr/share/fonts -name "*VictorMono*Italic*" 2>/dev/null | while read -r f; do
+    echo "Removing italic font: $f"
+    rm -f "$f"
+done
