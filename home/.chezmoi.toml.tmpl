@@ -9,6 +9,11 @@
 {{- end -}}
 
 {{- $iswork := promptBoolOnce . "iswork" "Is this a work machine?" -}}
+{{- $opPersonal := promptStringOnce . "opPersonal" "1Password personal account email" -}}
+{{- $opWork := "" -}}
+{{- if $iswork -}}
+{{-   $opWork = promptStringOnce . "opWork" "1Password work account email" -}}
+{{- end -}}
 
 [data]
   {{- if (hasKey .chezmoi.kernel "osrelease") }}
@@ -19,6 +24,8 @@
     osid = {{ $osID | quote }}
     oslike = {{ $osLike | quote }}
     iswork = {{ $iswork }}
+    opPersonal = {{ $opPersonal | quote }}
+    opWork = {{ $opWork | quote }}
 
 [git]
     autoCommit = true

@@ -95,4 +95,4 @@
 {{- else }}
 	email = andrew@andrewburgess.io
 {{- end }}
-	signingkey = {{ onepasswordRead "op://Personal/SSH Key/public key"}}
+	signingkey = {{ onepasswordRead "op://Personal/SSH Key/public key" .opPersonal }}
