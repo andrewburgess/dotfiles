@@ -241,7 +241,7 @@ function buildRateIcons(fivePct, sevenPct) {
 
 // ─── Budget tracker (API / dollar-based plan) ─────────────────────────────────
 
-const MONTHLY_BUDGET = 100;
+const MONTHLY_BUDGET = 200;
 const BUDGET_FILE = `${process.env.HOME}/.claude/budget-tracker.json`;
 
 function buildBudgetIndicator(sessionCost, sessionId) {
