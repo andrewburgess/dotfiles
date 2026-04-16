@@ -8,6 +8,7 @@ add_newline = true
 command_timeout = 2000
 
 format = """\
+$username$hostname\
 [](fg:#58a6ff)\
 $directory\
 ${custom.directory_separator_not_git}\
@@ -57,6 +58,10 @@ disabled = false
 
 [nodejs]
 format ="[$symbol($version )]($style)"
+
+[hostname]
+ssh_only = true
+format = "[$ssh_symbol$hostname]($style) "
 
 [package]
 disabled = true
