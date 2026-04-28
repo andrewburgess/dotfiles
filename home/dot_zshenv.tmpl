@@ -5,7 +5,6 @@ if [[ -o interactive ]] && command -v op >/dev/null 2>&1; then
 fi
 {{ end -}}
 export EDITOR=hx
-export GPG_TTY=$(tty)
 export NODE_OPTIONS="$NODE_OPTIONS --max-old-space-size=8192"
 export XDG_CONFIG_HOME=$HOME/.config
 
