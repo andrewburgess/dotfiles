@@ -1,8 +1,5 @@
 {{- if .iswork }}
 export AWS_SESSION_TOKEN_TTL="7200s"
-if [[ -o interactive ]] && command -v op >/dev/null 2>&1; then
-  export GITHUB_ACCESS_TOKEN="$(op read 'op://Personal/GitHub/hugo' --account '{{ .opPersonal }}' 2>/dev/null)"
-fi
 {{ end -}}
 export EDITOR=hx
 export NODE_OPTIONS="$NODE_OPTIONS --max-old-space-size=8192"
