@@ -11,7 +11,8 @@ packages:
             - "mise"
             - "oven-sh/bun/bun"
             - "starship"
-            - "taskwarrior"
+            - "task"
+            - "tasksh"
             - "zoxide"
 
         brew_work:
@@ -38,7 +39,8 @@ packages:
             - "mise"
             - "oven-sh/bun/bun"
             - "starship"
-            - "taskwarrior"
+            - "task"
+            - "tasksh"
             - "tmux"
             - "zoxide"
 
