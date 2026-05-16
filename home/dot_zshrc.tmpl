@@ -20,6 +20,7 @@ ENABLE_CORRECTION="true"
 DISABLE_UNTRACKED_FILES_DIRTY="true"
 
 plugins=(
+    taskwarrior
     zsh-autosuggestions
     zsh-syntax-highlighting
 )
@@ -37,8 +38,6 @@ eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 eval "$(starship init zsh)"
 eval "$(mise activate zsh)"
 eval "$(zoxide init zsh)"
-
-source ~/bin/worktree
 
 # bun completions
 [ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
