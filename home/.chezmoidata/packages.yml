@@ -36,6 +36,8 @@ packages:
             - "gh"
             - "git-lfs"
             - "helix"
+            - "herdr"
+            - "herdr-app"
             - "mise"
             - "oven-sh/bun/bun"
             - "starship"
