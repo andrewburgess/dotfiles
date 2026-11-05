@@ -2,4 +2,6 @@
 idiomatic_version_file_enable_tools = ["node"]
 
 [tools]
-node = "24"
+node = "26"
+"npm:typescript" = "latest"
+"npm:typescript-language-server" = "latest"

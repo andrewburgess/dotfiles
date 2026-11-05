@@ -65,3 +65,14 @@ format = "[$ssh_symbol$hostname]($style) "
 
 [package]
 disabled = true
+
+# Shows the active aws-vault profile when credentials come from the
+# `--server` (ecs/ec2 metadata) mode. In that mode aws-vault sets AWS_VAULT
+# but never AWS_ACCESS_KEY_ID, so the built-in $aws module (which needs a
+# static credential/profile/region var) never triggers.
+[custom.aws_vault_server]
+command = '''region="${AWS_REGION:-$AWS_DEFAULT_REGION}"; if [ -n "$region" ]; then echo "$AWS_VAULT ($region) [∞]"; else echo "$AWS_VAULT [∞]"; fi'''
+when = '[ -n "$AWS_VAULT" ] && [ -z "$AWS_ACCESS_KEY_ID" ]'
+symbol = "☁️️ "
+format = "on [$symbol ($output )]($style)"
+style = "bold yellow"
