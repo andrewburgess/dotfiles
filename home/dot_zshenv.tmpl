@@ -1,5 +1,5 @@
 {{- if .iswork }}
-export GITHUB_ACCESS_TOKEN={{ onepasswordRead "op://Private/GitHub/Tokens/packages (read only)" .opPersonal }}
+export GITHUB_ACCESS_TOKEN={{ onepasswordRead "op://Private/GitHub/Tokens/packages" .opPersonal }}
 export AWS_SESSION_TOKEN_TTL="7200s"
 export AWS_VAULT_BIOMETRICS=true
 {{ end -}}
