@@ -11,8 +11,10 @@
 {{- $iswork := promptBoolOnce . "iswork" "Is this a work machine?" -}}
 {{- $opPersonal := promptStringOnce . "opPersonal" "1Password personal account email" -}}
 {{- $opWork := "" -}}
+{{- $herdrIssuesRepo := "" -}}
 {{- if $iswork -}}
 {{-   $opWork = promptStringOnce . "opWork" "1Password work account email" -}}
+{{-   $herdrIssuesRepo = promptStringOnce . "herdrIssuesRepo" "GitHub repo (owner/name) for the Herdr issues panel" -}}
 {{- end -}}
 
 [data]
@@ -26,6 +28,7 @@
     iswork = {{ $iswork }}
     opPersonal = {{ $opPersonal | quote }}
     opWork = {{ $opWork | quote }}
+    herdrIssuesRepo = {{ $herdrIssuesRepo | quote }}
 
 [git]
     autoCommit = true
