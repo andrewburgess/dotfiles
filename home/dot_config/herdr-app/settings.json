@@ -1,0 +1,11 @@
+{
+  "zoom": 1,
+  "sounds": {
+    "enabled": true
+  },
+  "font_size": 14,
+  "telemetry": false,
+  "minimum_contrast": 1,
+  "theme": "dracula",
+  "font": "VictorMono Nerd Font"
+}
