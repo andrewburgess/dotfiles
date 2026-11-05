@@ -8,6 +8,7 @@ packages:
             - "cloudflared"
             - "difftastic"
             - "gh"
+            - "herdr"
             - "mise"
             - "oven-sh/bun/bun"
             - "starship"
