@@ -7,3 +7,10 @@ mfa_serial=arn:aws:iam::{{ onepasswordRead "op://Employee/Amazon AWS/account id"
 {{if ne .chezmoi.os "windows" -}}
 mfa_process=op item get "Amazon AWS" --otp --account '{{ .opWork }}'
 {{end -}}
+
+{{if .iswork -}}
+[profile claude-logs]
+mfa_serial=arn:aws:iam::{{ onepasswordRead "op://Employee/Amazon AWS/account id" .opWork }}:mfa/andrewb
+role_arn=arn:aws:iam::{{ onepasswordRead "op://Employee/Amazon AWS/account id" .opWork }}:role/ClaudeCloudWatchLogsReadOnlyAccess
+source_profile=andrewb
+{{end -}}
