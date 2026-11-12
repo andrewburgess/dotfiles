@@ -14,7 +14,8 @@ import { fileTarget, openFileMenu } from "./file-actions.js";
 
 /** Tried in order when no PR base is known; the one with the fewest commits ahead of it wins. */
 const BASE_CANDIDATES = ["origin/dev", "origin/develop", "origin/main", "origin/master", "origin/staging", "dev", "develop", "main", "master"];
-const ROW_H = 30, INDENT = 14, NONE = "#00000000";
+// INDENT is a folder row's checkbox plus its gap (16 + 6), so a child's checkbox sits under its folder's icon.
+const ROW_H = 30, INDENT = 22, NONE = "#00000000";
 const countLines = (text) => text ? text.split("\n").length - Number(text.endsWith("\n")) : 0;
 
 // A throwaway index keeps the user's staging area untouched; copying the real one first
