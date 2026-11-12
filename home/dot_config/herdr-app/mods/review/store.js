@@ -157,13 +157,40 @@ export function reviewStates(session, files) {
 export const reviewMark = (session, path) => (shared(REVIEWED) ?? {})[session?.key]?.[path] ?? null;
 
 /**
+ * Stores many files' current content as blobs, one git call per chunk of paths.
+ * @returns `{ [path]: sig }`; a file that couldn't be read has no entry
+ */
+async function storeBlobs(session, files) {
+  const sigs = {}, live = [];
+  for (const f of files) {
+    if (f.status === "D") sigs[f.path] = "deleted";
+    else if (session.mode === "turn") { if (f.sig) sigs[f.path] = f.sig; }
+    else live.push(f.path);
+  }
+  for (const part of chunks(live)) {
+    const r = await exec("git", ["hash-object", "-w", "--", ...part], { cwd: session.root, on: session.on }).catch(() => null);
+    if (r?.code !== 0) continue;
+    r.stdout.trim().split("\n").forEach((h, i) => { sigs[part[i]] = h; });
+  }
+  return sigs;
+}
+
+/**
  * Marks or unmarks a file as reviewed in a session.
  * @param done True to mark it with its current content, false to clear the mark
  */
-export async function setReviewed(session, file, done) {
-  const sig = done ? await storeBlob(session, file) : null;
-  const all = { ...(shared(REVIEWED) ?? {}) }, marks = { ...(all[session.key] ?? {}) };
-  if (done && sig) marks[file.path] = { sig, at: Date.now() }; else delete marks[file.path];
+export const setReviewed = (session, file, done) => setReviewedMany(session, [file], done);
+
+/**
+ * Marks or unmarks several files as reviewed in a session, saving the marks once.
+ * @param done True to mark each with its current content, false to clear their marks
+ */
+export async function setReviewedMany(session, files, done) {
+  const sigs = done ? await storeBlobs(session, files) : {};
+  const all = { ...(shared(REVIEWED) ?? {}) }, marks = { ...(all[session.key] ?? {}) }, at = Date.now();
+  for (const file of files) {
+    if (done && sigs[file.path]) marks[file.path] = { sig: sigs[file.path], at }; else delete marks[file.path];
+  }
   if (Object.keys(marks).length) all[session.key] = marks; else delete all[session.key];
   const month = Date.now() - 30 * 86400000;
   for (const [k, m] of Object.entries(all)) if (Object.values(m).every((x) => x.at < month)) delete all[k];

@@ -5,7 +5,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, focused, exec, readTextFile, watchFolder, theme, settings, shared, setShared, nextCommand, run } from "herdr";
 import {
   MOD, MODES, TURNS, BASES, SESSIONS, TABS, OPEN, CURRENT, HISTORY, prefs, setPref, git, location, liveTabs,
-  generatedPaths, signatures, reviewState, reviewStates, setReviewed, draftsOf, setDrafts, historyOf, settlePending, pendingSent,
+  generatedPaths, signatures, reviewState, reviewStates, setReviewed, setReviewedMany, draftsOf, setDrafts, historyOf, settlePending, pendingSent,
   ago, remoteKey, remoteOf, fetchRemote, setRemote, shownThreads, threadStatus, threadSpan, reviewWord,
 } from "./store.js";
 import { submitReview } from "./ask.js";
@@ -509,6 +509,17 @@ export class Panel {
     cx.spawn(async (cx) => { await setReviewed(s, file, done); cx.notify(); });
   }
 
+  /**
+   * Marks every file under a tree folder reviewed, or clears them all when every one already is.
+   * @param dir A `buildTree` folder node with `countTree` counts
+   */
+  toggleDirReviewed(dir, cx) {
+    const s = this.session();
+    if (!s || !dir.total) return;
+    const done = dir.done !== dir.total;
+    cx.spawn(async (cx) => { await setReviewedMany(s, treeFiles(dir), done); cx.notify(); });
+  }
+
   toggleDir(path) {
     const all = { ...prefs().collapsed }, list = new Set(all[this.root] ?? []);
     if (list.has(path)) list.delete(path); else list.add(path);
@@ -595,13 +606,17 @@ export class Panel {
       .child(div().h(4).w_full().rounded(2).bg(t.raised).child(div().h_full().rounded(2).bg(done === total ? t.ansi2 : t.accent).w(`${total ? (100 * done) / total : 0}%`)));
   }
 
-  /** A reviewed checkbox: empty, checked, or ringed in the warning color when the file changed since. */
+  /**
+   * A reviewed checkbox: empty, checked, ringed in the warning color when the file changed since,
+   * or a dash when only some of a folder's files are reviewed.
+   */
   box(t, state, size = 16) {
     return div().size(size).flex_none().flex().items_center().justify_center().rounded(4).border_1()
       .border_color(state === "done" ? t.ansi2 : state === "changed" ? t.blocked : t.input)
       .bg(state === "done" ? t.ansi2 : NONE)
       .when(state === "done", (e) => e.child(svg(`mods/${MOD}/check.svg`).size(size - 5).text_color(t.background)))
-      .when(state === "changed", (e) => e.child(div().size(6).rounded(3).bg(t.blocked)));
+      .when(state === "changed", (e) => e.child(div().size(6).rounded(3).bg(t.blocked)))
+      .when(state === "partial", (e) => e.child(div().w(size - 8).h(2).rounded(1).bg(t.ansi2)));
   }
 
   fileRow(t, s, f, depth, ctx) {
@@ -637,9 +652,11 @@ export class Panel {
   treeRows(t, s, node, depth, ctx, out) {
     for (const d of [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name))) {
       const { total, done } = d, shut = ctx.collapsed.has(d.path);
+      const state = total && done === total ? "done" : done > 0 ? "partial" : "none";
       out.push(h_flex().id(`dir-${d.path}`).h(ROW_H - 2).flex_none().pl(6 + depth * INDENT).pr(8).gap(6).items_center().rounded(7).cursor_pointer()
         .hover((st) => st.bg(t.hover)).on_click(() => this.toggleDir(d.path))
         .child(div().w(12).flex_none().text_size(11).text_color(t.dim).child(shut ? "▸" : "▾"))
+        .child(div().id(`reviewed-dir-${d.path}`).cursor_pointer().on_click((_e, cx) => { cx.stop_propagation(); this.toggleDirReviewed(d, cx); }).child(this.box(t, state)))
         .child(image(folderIcon(d.name.split("/").pop(), !shut, settings().dark !== false)).size(16).flex_none())
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(`${d.name}/`))
         .child(div().flex_none().text_size(12).text_color(done === total ? t.ansi2 : t.dim).child(`${done}/${total}`)));
