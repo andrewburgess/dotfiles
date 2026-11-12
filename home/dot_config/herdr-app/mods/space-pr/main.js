@@ -6,16 +6,16 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, TextView, InputState, Input } from "gpui-base";
 import { exec, theme, notify, run, spaces, panes, home } from "herdr";
-import { location, check, overall, readyToMerge, onMainBranch } from "./detect.js";
+import { location, check, latest, overall, readyToMerge, onMainBranch } from "./detect.js";
 
 const FIELDS = [
   "number", "title", "url", "state", "isDraft", "author", "baseRefName", "headRefName",
-  "reviewDecision", "mergeStateStatus", "statusCheckRollup", "latestReviews", "reviewRequests",
+  "headRefOid", "isCrossRepository", "reviewDecision", "mergeStateStatus", "statusCheckRollup", "latestReviews", "reviewRequests",
   "additions", "deletions", "changedFiles", "labels", "updatedAt", "body",
 ].join(",");
 const LIST_FIELDS = [
   "number", "title", "url", "isDraft", "author", "baseRefName", "headRefName",
-  "reviewDecision", "statusCheckRollup", "updatedAt",
+  "headRefOid", "isCrossRepository", "reviewDecision", "statusCheckRollup", "updatedAt",
 ].join(",");
 const WATCH_MS = 2000;
 const REFRESH_MS = 60 * 1000;
@@ -72,6 +72,40 @@ const result = (r, what) => {
   if (r.code !== 0) throw new Error((r.stderr ?? "").trim() || `${what} exited ${r.code}`);
   return r.stdout.trim();
 };
+
+/**
+ * Puts a checkout on a PR's branch at the PR's head commit. `gh pr checkout` goes first
+ * (fast-forward, fork remotes, upstream tracking). When it can't, such as a local branch
+ * made from the base branch instead of the PR, the branch is moved to the PR's head only
+ * if nothing would be lost: no uncommitted changes and no local commits missing from every
+ * remote.
+ * @param path Checkout folder
+ * @param pr Pull request with number, headRefName, headRefOid and isCrossRepository
+ * @param on Machine name, null for this computer
+ * @returns null once the checkout is on the PR, else why it was left alone
+ */
+async function alignToPr(path, pr, on) {
+  const git = (args) => exec("git", args, { cwd: path, on });
+  const branch = pr.headRefName, head = pr.headRefOid;
+  const onPr = async () => (await git(["branch", "--show-current"])).stdout.trim() === branch
+    && (!head || (await git(["merge-base", "--is-ancestor", head, "HEAD"])).code === 0);
+  if (await onPr()) return null;
+  const co = await exec("gh", ["pr", "checkout", String(pr.number)], { cwd: path, on });
+  if (co.code === 0 && await onPr()) return null;
+  if (!head) return co.stderr.trim() || `gh pr checkout exited ${co.code}`;
+
+  result(await git(["fetch", "origin", `refs/pull/${pr.number}/head`]), "git fetch");
+  if ((await git(["status", "--porcelain"])).stdout.trim()) return "It has uncommitted changes.";
+  if ((await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).code === 0
+    && (await git(["rev-list", "--max-count=1", `refs/heads/${branch}`, "--not", "--remotes"])).stdout.trim()) {
+    return `Local ${branch} has commits that aren't on any remote.`;
+  }
+  result(await git(["checkout", "-B", branch, head]), "git checkout");
+  if (!pr.isCrossRepository && (await git(["fetch", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`])).code === 0) {
+    await git(["branch", `--set-upstream-to=origin/${branch}`, branch]);
+  }
+  return null;
+}
 
 export default class SpacePr extends View {
   init(_props, cx) {
@@ -157,9 +191,9 @@ export default class SpacePr extends View {
   }
 
   /**
-   * Shows a PR's branch in its own worktree space: the space already on it, else a new
-   * checkout under ~/.herdr/worktrees/<repo>/ (where the worktree mod puts them) made with
-   * `gh pr checkout`, so fork PRs and upstream tracking work as they do from a shell.
+   * Shows a PR's branch in its own worktree space: the worktree already on that branch, else
+   * a new checkout under ~/.herdr/worktrees/<repo>/ (where the worktree mod puts them). Either
+   * way the checkout is brought to the PR's head commit (see `alignToPr`).
    */
   openWorktree(cx, pr) {
     const loc = this.loc;
@@ -174,6 +208,8 @@ export default class SpacePr extends View {
           .map((b) => ({ path: b.match(/^worktree (.+)$/m)?.[1], branch: b.match(/^branch refs\/heads\/(.+)$/m)?.[1] }))
           .find((w) => w.path && w.branch === pr.headRefName);
         if (existing) {
+          const why = await alignToPr(existing.path, pr, loc.on).catch((e) => String(e?.message ?? e));
+          if (why) notify({ title: `Left ${pr.headRefName} as it was`, body: `Not moved to #${pr.number}'s latest commit. ${why}`, level: "warning" });
           const s = spaceAt(existing.path, loc.on);
           if (s) run("space.select", { id: s.id });
           else run("space.new", { folder: existing.path, machine: loc.on });
@@ -182,10 +218,10 @@ export default class SpacePr extends View {
         const userHome = loc.on ? result(await exec("sh", ["-c", 'printf %s "$HOME"'], { on: loc.on }), "sh") : home();
         const path = `${userHome}/.herdr/worktrees/${main.split("/").pop()}/${slug(pr.headRefName)}`;
         await git(["worktree", "add", "--detach", path], main);
-        const co = await exec("gh", ["pr", "checkout", String(pr.number)], { cwd: path, on: loc.on });
-        if (co.code !== 0) {
+        const why = await alignToPr(path, pr, loc.on).catch((e) => String(e?.message ?? e));
+        if (why) {
           await exec("git", ["worktree", "remove", "--force", path], { cwd: main, on: loc.on });
-          throw new Error(co.stderr.trim() || `gh pr checkout exited ${co.code}`);
+          throw new Error(why);
         }
         // Left unnamed so the space follows the checkout and nests under its repo.
         run("space.new", { folder: path, machine: loc.on });
@@ -214,7 +250,7 @@ export default class SpacePr extends View {
   }
 
   renderChecks(t, pr) {
-    const checks = (pr.statusCheckRollup ?? []).map(check);
+    const checks = latest(pr.statusCheckRollup).map(check);
     if (!checks.length) return [this.section(t, "Checks"), div().text_color(t.dim).text_size(13).child("No checks reported")];
     const by = (r) => checks.filter((c) => c.result === r);
     const failed = by("fail"), pending = by("pending"), passed = by("pass");

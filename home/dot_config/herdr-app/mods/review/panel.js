@@ -5,10 +5,12 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, focused, exec, readTextFile, watchFolder, theme, settings, shared, setShared, nextCommand, run } from "herdr";
 import {
   MOD, MODES, TURNS, BASES, SESSIONS, TABS, OPEN, CURRENT, HISTORY, prefs, setPref, git, location, liveTabs,
-  generatedPaths, signatures, reviewState, setReviewed, draftsOf, setDrafts, historyOf, settlePending, pendingSent,
+  generatedPaths, signatures, reviewState, reviewStates, setReviewed, draftsOf, setDrafts, historyOf, settlePending, pendingSent,
+  ago, remoteKey, remoteOf, fetchRemote, setRemote, shownThreads, threadStatus, threadSpan, reviewWord,
 } from "./store.js";
 import { submitReview } from "./ask.js";
 import { fileIcon, folderIcon } from "./icon-map.js";
+import { fileTarget, openFileMenu } from "./file-actions.js";
 
 /** Tried in order when no PR base is known; the one with the fewest commits ahead of it wins. */
 const BASE_CANDIDATES = ["origin/dev", "origin/develop", "origin/main", "origin/master", "origin/staging", "dev", "develop", "main", "master"];
@@ -31,11 +33,6 @@ async function snapshot(cwd, on) {
   if (top.code !== 0) return null;
   const root = top.stdout.trim(), r = await exec("sh", ["-c", SNAPSHOT], { cwd: root, on });
   return r.code === 0 && r.stdout.trim() ? { root, tree: r.stdout.trim() } : null;
-}
-
-export function ago(ms) {
-  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`;
 }
 
 function parseNumstat(stdout, stats = {}) {
@@ -83,6 +80,18 @@ function buildTree(files) {
   return root;
 }
 
+/**
+ * Sets each folder's `total` and `done` file counts in one pass.
+ * @param states Review state by file path
+ * @returns The node's `[total, done]`
+ */
+function countTree(node, states) {
+  let total = node.files.length, done = node.files.filter((f) => states.get(f.path) === "done").length;
+  for (const d of node.dirs.values()) { const [t, k] = countTree(d, states); total += t; done += k; }
+  node.total = total; node.done = done;
+  return [total, done];
+}
+
 /** Every file under a tree node, in tree order. */
 function treeFiles(node) {
   return [...[...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name)).flatMap(treeFiles), ...[...node.files].sort((a, b) => a.path.localeCompare(b.path))];
@@ -91,7 +100,7 @@ function treeFiles(node) {
 export class Panel {
   init(_props, cx) {
     this.files = []; this.message = ""; this.statuses = {}; this.detected = {}; this.branches = []; this.filter = "";
-    this.lastAgent = {}; this.published = null; this.historyOpen = false; this.handle = cx.focus_handle();
+    this.lastAgent = {}; this.published = null; this.historyOpen = false; this.remoteOpen = false; this.handle = cx.focus_handle();
     this.input = InputState.new({ placeholder: "Commit message" });
     this.input.on("change", (_e, cx) => {
       const hadMessage = Boolean(this.message.trim());
@@ -198,12 +207,13 @@ export class Panel {
     if (this.detected[cacheKey]) return this.detected[cacheKey];
     const exists = async (ref) => (await g(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])).code === 0;
     let found = null;
-    if (branch) {
+    const onBase = BASE_CANDIDATES.some((r) => r.replace(/^origin\//, "") === branch);
+    if (branch && !onBase) {
       const pr = await exec("gh", ["pr", "view", branch, "--json", "baseRefName", "-q", ".baseRefName"], { cwd: root, on }).catch(() => null);
       const name = pr?.code === 0 ? pr.stdout.trim() : "";
       if (name) found = (await exists(`origin/${name}`)) ? `origin/${name}` : (await exists(name)) ? name : null;
     }
-    if (!found) {
+    if (!found && !onBase) {
       const head = (await g(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])).stdout.trim();
       let best = null;
       for (const ref of [...new Set([head, ...BASE_CANDIDATES])].filter((r) => r && r !== branch && r !== `origin/${branch}`)) {
@@ -212,8 +222,8 @@ export class Panel {
       }
       found = best?.ref ?? null;
     }
-    // On a base branch itself (main, master, dev) every candidate is skipped; compare against
-    // its own remote so the panel shows unpushed work instead of nothing.
+    // On a base branch itself (main, master, dev), comparing against another base would list a
+    // whole release diff; compare against its own remote so the panel shows unpushed work.
     if (!found && branch) {
       const upstream = (await g(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])).stdout.trim();
       found = upstream && (await exists(upstream)) ? upstream : (await exists(`origin/${branch}`)) ? `origin/${branch}` : null;
@@ -300,10 +310,12 @@ export class Panel {
           if (text !== null && !text.includes("\0")) f.add = countLines(text); else if (text?.includes("\0")) f.binary = true;
         }
         if (this.key() !== context) return;
-        this.root = root; this.on = on; this.space = space; this.hasHead = head.code === 0; this.diffArgs = diffArgs; this.info = info; this.empty = empty; this.scope = scope;
+        this.root = root; this.on = on; this.space = space; this.hasHead = head.code === 0; this.head = this.hasHead ? head.stdout.trim() : null;
+        this.diffArgs = diffArgs; this.info = info; this.empty = empty; this.scope = scope;
         this.files = files; this.limited = found.files.length > 1000; this.error = null;
         this.watch(root, cx);
         this.publish();
+        this.syncRemote(cx);
       } catch (e) { if (this.key() === context) this.error = String(e?.message ?? e); }
       finally {
         this.loading = false; cx.notify();
@@ -372,6 +384,62 @@ export class Panel {
 
   // #endregion
 
+  // #region Pull request comments
+
+  /** Fetches the branch's PR comments when HEAD moved, or when the last fetch is over 90 s old. */
+  syncRemote(cx, force = false) {
+    const key = remoteKey(this.on, this.root), stamp = `${key}\0${this.head}`, last = remoteOf(key);
+    if (!key || this.remoteBusy) return;
+    if (!force && this.remoteStamp === stamp && last && Date.now() - last.at < 90000) return;
+    this.remoteBusy = key; this.remoteStamp = stamp;
+    const root = this.root, on = this.on;
+    cx.spawn(async (cx) => {
+      try { setRemote(key, await fetchRemote(root, on)); }
+      catch (e) { setRemote(key, { threads: [], conversation: [], ...(remoteOf(key) ?? {}), at: Date.now(), error: String(e?.message ?? e) }); }
+      finally { this.remoteBusy = null; cx.notify(); }
+    });
+  }
+
+  /** The branch's pull request: its conversation and line threads, and the settings for showing them. */
+  remoteSection(t) {
+    const key = remoteKey(this.on, this.root), r = remoteOf(key);
+    if (!r || (!r.number && !r.error)) return null;
+    const p = prefs(), threads = shownThreads(r), open = r.threads.filter((x) => !x.resolved).length, talk = r.conversation.length;
+    const words = r.number ? [`PR #${r.number}`, `${open} open thread${open === 1 ? "" : "s"}`, talk ? `${talk} comment${talk === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") : "PR comments";
+    const browse = (url) => () => { if (url) exec("open", [url]).catch(() => null); };
+    const icon = (id, tip, child, action) => div().id(id).size(22).flex().flex_none().items_center().justify_center().rounded(5).cursor_pointer().text_color(t.dim)
+      .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip).on_click((_e, cx) => { cx.stop_propagation(); action(cx); cx.notify(); }).child(child);
+    const toggle = (id, label, on, action) => h_flex().id(id).h(26).px(6).gap(6).items_center().rounded(6).text_size(13).cursor_pointer()
+      .text_color(on ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(action).child(this.box(t, on ? "done" : "none", 14)).child(label);
+    return v_flex().flex_none().border_t(1).border_color(t.border)
+      .child(h_flex().id("remote-toggle").h(34).pl(14).pr(8).gap(6).items_center().cursor_pointer().text_size(13).text_color(t.muted).hover((s) => s.text_color(t.foreground))
+        .on_click((_e, cx) => { this.remoteOpen = !this.remoteOpen; cx.notify(); })
+        .child(div().w(12).text_size(11).child(this.remoteOpen ? "▾" : "▸"))
+        .child(div().flex_1().min_w(0).truncate().child(words))
+        .child(div().flex_none().text_size(12).text_color(r.error ? t.ansi1 : t.dim).child(this.remoteBusy === key ? "updating…" : r.error ? "failed" : ago(r.at)))
+        .child(icon("remote-refresh", "Fetch PR comments", "↻", (cx) => this.syncRemote(cx, true)))
+        .when(Boolean(r.url), (e) => e.child(icon("remote-browse", "Open the PR on GitHub", svg(`mods/${MOD}/external-link.svg`).size(12), browse(r.url)))))
+      .when(this.remoteOpen, (e) => e.child(v_flex().px(10).pb(8).gap(6)
+        .when(Boolean(r.error), (el) => el.child(div().px(4).text_size(12).text_color(t.ansi1).whitespace_normal().child(r.error)))
+        .child(h_flex().gap(4).flex_wrap()
+          .child(toggle("remote-in-diff", "Threads in diff", p.remoteInDiff, () => setPref("remoteInDiff", !p.remoteInDiff)))
+          .child(toggle("remote-hide-resolved", "Hide resolved", p.hideResolved, () => setPref("hideResolved", !p.hideResolved))))
+        .child(v_flex().id("remote-list").max_h(260).overflow_y_scrollbar().gap(2)
+          .children(r.conversation.map((c) => this.remoteRow(t, `remote-c-${c.id}`, `@${c.author} · ${reviewWord(c)} · ${ago(c.at)}`, c.body, c.bot, browse(c.url))))
+          .children(threads.map((x) => this.remoteRow(t, `remote-t-${x.id}`,
+            `${x.path.split("/").pop()} · ${threadSpan(x)} · ${threadStatus(x)}${x.comments.length > 1 ? ` · ${x.comments.length} comments` : ""}`,
+            `@${x.comments[0].author}: ${x.comments[0].body}`, x.resolved, (_e, cx) => this.openFile(x.path, cx, false, x.id))))
+          .when(!talk && !threads.length, (el) => el.child(div().px(6).text_size(13).text_color(t.dim).child(r.threads.length ? "Every thread is resolved" : "No comments yet"))))));
+  }
+
+  remoteRow(t, id, label, body, faded, action) {
+    return v_flex().id(id).px(6).py(4).rounded(6).cursor_pointer().hover((s) => s.bg(t.hover)).on_click(action).when(faded, (e) => e.opacity(0.6))
+      .child(div().text_size(12).text_color(t.muted).truncate().child(label))
+      .child(div().text_size(13).truncate().child((body || "").trim().split("\n")[0]));
+  }
+
+  // #endregion
+
   // #region Session
 
   /** Drafts, reviewed marks and history are kept per machine, repo, mode and what the mode compares. */
@@ -386,6 +454,7 @@ export class Panel {
     return {
       space: this.space, root: this.root, on: this.on ?? null, hasHead: this.hasHead, mode: this.mode, scope: this.scope, diffArgs: this.diffArgs,
       key: this.reviewKey(), label: this.info?.text ?? null, agent: this.lastAgent[this.space] ?? null,
+      head: this.head ?? null, remote: remoteKey(this.on, this.root),
       files: this.files.map(({ path, status, fresh, add, del, binary, sig, generated }) => ({ path, status, fresh: Boolean(fresh), add, del, binary: Boolean(binary), sig, generated })),
       order: this.ordered().map((f) => f.path),
     };
@@ -402,12 +471,16 @@ export class Panel {
     setShared(SESSIONS, { ...Object.fromEntries(Object.entries(all).filter(([id]) => live.has(id))), [s.space]: s });
   }
 
-  /** Shows a file in the space's Review tab, opening the tab the first time. */
-  openFile(path, cx, comment = false) {
+  /**
+   * Shows a file in the space's Review tab, opening the tab the first time.
+   * @param comment Open the whole-file comment box
+   * @param thread A PR thread id to scroll to
+   */
+  openFile(path, cx, comment = false, thread = null) {
     const s = this.session();
     if (!s) return;
     this.publish();
-    setShared(OPEN, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, at: Date.now(), space: s.space, path, comment });
+    setShared(OPEN, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, at: Date.now(), space: s.space, path, comment, thread });
     const live = liveTabs(), tabs = Object.fromEntries(Object.entries(shared(TABS) ?? {}).filter(([id]) => live.has(id)));
     const entry = { space: s.space, cwd: s.root, on: s.on };
     const existing = Object.entries(tabs).find(([, v]) => v.space === s.space);
@@ -445,7 +518,7 @@ export class Panel {
 
   submit(cx) {
     const s = this.session();
-    if (s && draftsOf(s.key).length) submitReview(s, draftsOf(s.key));
+    if (s) submitReview(s, draftsOf(s.key));
     cx.notify();
   }
 
@@ -532,9 +605,10 @@ export class Panel {
   }
 
   fileRow(t, s, f, depth, ctx) {
-    const parts = f.path.split("/"), name = parts.pop(), k = ctx.perFile[f.path], state = reviewState(s, f), open = ctx.current === f.path;
+    const parts = f.path.split("/"), name = parts.pop(), k = ctx.perFile[f.path], state = ctx.states.get(f.path) ?? "none", shown = ctx.current === f.path, open = ctx.threads[f.path];
     return h_flex().id(`change-${f.path}`).h(ROW_H).flex_none().pl(8 + depth * INDENT).pr(8).gap(8).items_center().rounded(7).cursor_pointer()
-      .when(open, (e) => e.bg(t.selected)).hover((st) => st.bg(t.hover)).on_click((_e, cx) => this.openFile(f.path, cx))
+      .when(shown, (e) => e.bg(t.selected)).hover((st) => st.bg(t.hover)).on_click((_e, cx) => this.openFile(f.path, cx))
+      .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openFileMenu(fileTarget(s, f)); })
       .child(div().id(`reviewed-${f.path}`).cursor_pointer().on_click((_e, cx) => { cx.stop_propagation(); this.toggleReviewed(f, cx); }).child(this.box(t, state)))
       .child(div().w(12).flex_none().text_size(13).text_color(f.status === "A" ? t.ansi2 : f.status === "D" || f.status === "U" ? t.ansi1 : t.blocked).child(f.status))
       .child(image(fileIcon(name, settings().dark !== false)).size(16).flex_none())
@@ -550,21 +624,25 @@ export class Panel {
         .hover((st) => st.bg(k ? t.accent + "55" : t.hover).text_color(t.foreground))
         .on_click((_e, cx) => { cx.stop_propagation(); this.openFile(f.path, cx, true); })
         .when(Boolean(k), (e) => e.child(String(k))).child(svg(`mods/${MOD}/comment.svg`).size(k ? 11 : 13)))
+      .when(Boolean(open?.length), (e) => e.child(h_flex().id(`pr-threads-${f.path}`).h(20).px(5).gap(3).flex_none().items_center().rounded(4)
+        .bg(t.ansi5 + "26").text_size(12).text_color(t.ansi5).cursor_pointer().hover((st) => st.bg(t.ansi5 + "44"))
+        .tooltip(`${open.length} unresolved PR thread${open.length > 1 ? "s" : ""}`)
+        .on_click((_e, cx) => { cx.stop_propagation(); this.openFile(f.path, cx, false, open[0].id); })
+        .child(svg(`mods/${MOD}/pr.svg`).size(12)).child(String(open.length))))
       .when(f.add > 0, (e) => e.child(div().text_size(13).text_color(t.ansi2).child(`+${f.add}`)))
       .when(f.del > 0, (e) => e.child(div().text_size(13).text_color(t.ansi1).child(`−${f.del}`)));
   }
 
   /** The tree's rows, skipping what collapsed folders hold. */
   treeRows(t, s, node, depth, ctx, out) {
-    const collapsed = new Set(prefs().collapsed[this.root] ?? []);
     for (const d of [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name))) {
-      const all = treeFiles(d), done = all.filter((f) => reviewState(s, f) === "done").length, shut = collapsed.has(d.path);
+      const { total, done } = d, shut = ctx.collapsed.has(d.path);
       out.push(h_flex().id(`dir-${d.path}`).h(ROW_H - 2).flex_none().pl(6 + depth * INDENT).pr(8).gap(6).items_center().rounded(7).cursor_pointer()
         .hover((st) => st.bg(t.hover)).on_click(() => this.toggleDir(d.path))
         .child(div().w(12).flex_none().text_size(11).text_color(t.dim).child(shut ? "▸" : "▾"))
         .child(image(folderIcon(d.name.split("/").pop(), !shut, settings().dark !== false)).size(16).flex_none())
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(`${d.name}/`))
-        .child(div().flex_none().text_size(12).text_color(done === all.length ? t.ansi2 : t.dim).child(`${done}/${all.length}`)));
+        .child(div().flex_none().text_size(12).text_color(done === total ? t.ansi2 : t.dim).child(`${done}/${total}`)));
       if (!shut) this.treeRows(t, s, d, depth + 1, ctx, out);
     }
     for (const f of [...node.files].sort((a, b) => a.path.localeCompare(b.path))) out.push(this.fileRow(t, s, f, depth, ctx));
@@ -607,26 +685,35 @@ export class Panel {
     const add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
     const drafts = draftsOf(s?.key), perFile = {};
     for (const c of drafts) perFile[c.path] = (perFile[c.path] ?? 0) + 1;
-    const done = s ? this.files.filter((f) => reviewState(s, f) === "done").length : 0;
-    const shown = p.hideReviewed && s ? this.files.filter((f) => reviewState(s, f) !== "done") : this.files;
-    const ctx = { perFile, tree, current: s ? (shared(CURRENT) ?? {})[s.space] : null };
+    const states = s ? reviewStates(s, this.files) : new Map();
+    const done = this.files.filter((f) => states.get(f.path) === "done").length;
+    const shown = p.hideReviewed && s ? this.files.filter((f) => states.get(f.path) !== "done") : this.files;
+    const threads = {};
+    for (const th of remoteOf(s?.remote)?.threads ?? []) if (!th.resolved) (threads[th.path] ??= []).push(th);
+    const ctx = { perFile, tree, threads, states, collapsed: new Set(p.collapsed[this.root] ?? []), current: s ? (shared(CURRENT) ?? {})[s.space] : null };
     const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading);
-    const n = drafts.length, sent = this.history(t);
+    const n = drafts.length, sent = this.history(t), remote = this.remoteSection(t);
 
     const header = h_flex().h(44).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
       .child(div().font_semibold().child("Review"))
       .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(12).text_color(t.muted).child(`${this.files.length} files`))
       .child(div().flex_1()).child(div().text_size(13).text_color(t.ansi2).child(`+${add}`)).child(div().text_size(13).text_color(t.ansi1).child(`−${del}`));
 
-    const rows = !s ? [] : tree ? this.treeRows(t, s, buildTree(shown), 0, ctx, []) : shown.map((f) => this.fileRow(t, s, f, 0, ctx));
+    const shownTree = s && tree ? buildTree(shown) : null;
+    if (shownTree) countTree(shownTree, states);
+    const rows = !s ? [] : tree ? this.treeRows(t, s, shownTree, 0, ctx, []) : shown.map((f) => this.fileRow(t, s, f, 0, ctx));
     const list = v_flex().id("changes-list").flex_1().min_h(0).mt(8).overflow_y_scrollbar().p(6).border_t(1).border_color(t.border)
       .children(rows)
       .when(!rows.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading && !this.files.length ? "Loading changes…" : !this.root ? "No folder" : this.files.length ? "Every file is reviewed" : this.empty))));
 
-    const reviewBar = n > 0 ? h_flex().flex_none().px(10).py(8).gap(8).items_center().border_t(1).border_color(t.border)
-      .child(div().flex_1().text_size(13).text_color(t.muted).child(`${n} draft comment${n > 1 ? "s" : ""}`))
-      .child(div().id("review-discard").h(28).px(8).flex().items_center().rounded(6).text_size(13).text_color(t.dim).cursor_pointer().hover((st) => st.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.discard(cx)).child("Discard"))
-      .child(div().id("review-submit").h(28).px(12).flex().items_center().rounded(6).bg(t.solid).text_color(t.solid_foreground).text_size(13).font_medium().cursor_pointer().hover((st) => st.opacity(0.88)).on_click((_e, cx) => this.submit(cx)).child(`Submit review · ${n}`)) : null;
+    const openThreads = Object.values(threads).reduce((k, list) => k + list.length, 0);
+    const reviewBar = s ? h_flex().flex_none().px(10).py(8).gap(8).items_center().border_t(1).border_color(t.border)
+      .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(t.muted)
+        .child(n ? `${n} draft comment${n > 1 ? "s" : ""}` : openThreads ? `${openThreads} unresolved PR thread${openThreads > 1 ? "s" : ""}` : "No draft comments"))
+      .when(n > 0, (e) => e.child(div().id("review-discard").h(28).px(8).flex().items_center().rounded(6).text_size(13).text_color(t.dim).cursor_pointer().hover((st) => st.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.discard(cx)).child("Discard")))
+      .child(div().id("review-submit").h(28).px(12).flex().flex_none().items_center().rounded(6).cursor_pointer().hover((st) => st.opacity(0.88)).text_size(13).font_medium()
+        .bg(n ? t.solid : t.raised).text_color(n ? t.solid_foreground : t.foreground)
+        .on_click((_e, cx) => this.submit(cx)).child(n ? `Submit review · ${n}` : "Send review")) : null;
 
     return v_flex().id("changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(15).track_focus(this.handle)
       .on_key_down((e, cx) => {
@@ -642,6 +729,7 @@ export class Panel {
       .when(this.limited, (e) => e.child(div().px(12).py(4).text_size(13).text_color(t.dim).child("Showing the first 1,000 changed files")))
       .when(Boolean(this.note_), (e) => e.child(div().px(10).py(6).text_size(13).text_color(t.ansi1).child(this.note_)))
       .when(Boolean(reviewBar), (e) => e.child(reviewBar))
+      .when(Boolean(remote), (e) => e.child(remote))
       .when(Boolean(sent), (e) => e.child(sent))
       .when(this.mode === "worktree", (e) => e.child(h_flex().flex_none().p(10).gap(8).border_t(1).border_color(t.border)
         .child(div().id("commit-message").flex_1().min_w(0).h(34).px(10).flex().items_center().rounded(8).border_1().border_color(this.typing ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(14).text_color(t.foreground)))

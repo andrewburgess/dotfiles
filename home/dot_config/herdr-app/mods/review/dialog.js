@@ -1,7 +1,8 @@
 // Adapted from herdr-reviewer by Vytas Gavelis, MIT License (LICENSE-herdr-reviewer).
 // The send dialog: this mod opened as a dialog overlay with props
-// { dialog: true, title, context, sent, agent }. The note and context go to the
-// chosen agent as one message with `hc send`, only while that agent is idle.
+// { dialog: true, title, context, sent, agent, remote }. The note and context go to the
+// chosen agent as one message with `hc send`, only while that agent is idle. PR comments
+// (`remote`) are added only when the person opts in.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, Popover } from "gpui-base";
 import { agents, focused, hc, run, notify, props, closeOverlay, theme, settings, setShared } from "herdr";
@@ -13,8 +14,11 @@ export class Dialog {
     const p = props() ?? {};
     this.context = String(p.context ?? ""); this.title = p.title ?? "";
     this.note = ""; this.pick = p.agent ?? null; this.error = null; this.sending = false; this.choosing = false; this.copied = false;
-    this.input = TextareaState.new({ placeholder: this.context ? "Your note to the agent (optional)…" : "What do you want to ask?", rows: this.context ? 2 : 3 });
-    this.input.set_auto_grow(this.context ? 2 : 3, this.context ? 4 : 6);
+    this.remote = p.remote?.items?.length ? p.remote : null; this.withRemote = false; this.remoteOpen = false;
+    this.picked = new Set((this.remote?.items ?? []).filter((i) => i.on).map((i) => i.id));
+    const short = Boolean(this.context) && !p.general;
+    this.input = TextareaState.new({ placeholder: p.general ? "Your feedback for the agent…" : this.context ? "Your note to the agent (optional)…" : "What do you want to ask?", rows: short ? 2 : 3 });
+    this.input.set_auto_grow(short ? 2 : 3, short ? 4 : 6);
     this.input.on("change", (_e, cx) => { this.note = this.input.value(); this.error = null; cx.notify(); });
     this.input.on("submit", (e, cx) => { if (!e?.shift) this.send(cx); });
     this.input.focus();
@@ -34,12 +38,50 @@ export class Dialog {
     return list.find((a) => a.address === this.pick) ?? list.find((a) => a.focused) ?? list.find((a) => a.status === "idle") ?? list[0] ?? null;
   }
 
-  text() { return [this.note.trim(), this.context.trim()].filter(Boolean).join("\n\n"); }
+  /** The picked PR comments as one block, or "" when the person hasn't opted in. */
+  remoteText() {
+    const items = this.withRemote ? (this.remote?.items ?? []).filter((i) => this.picked.has(i.id)) : [];
+    if (!items.length) return "";
+    return `Existing comments on ${this.remote.label} (${this.remote.url}), for context; some may already be addressed:\n\n${items.map((i) => i.text).join("\n\n")}`;
+  }
+
+  /** Everything sent after the note. */
+  full() { return [this.context.trim(), this.remoteText()].filter(Boolean).join("\n\n"); }
+
+  text() { return [this.note.trim(), this.full()].filter(Boolean).join("\n\n"); }
+
+  /** Include PR comments, and the list to pick which ones. */
+  remoteChooser(t) {
+    const items = this.remote.items, n = items.filter((i) => this.picked.has(i.id)).length;
+    const box = (on) => div().size(14).flex_none().flex().items_center().justify_center().rounded(4).border_1()
+      .border_color(on ? t.accent : t.input).bg(on ? t.accent : "#00000000")
+      .when(on, (e) => e.child(svg("mods/review/check.svg").size(10).text_color(t.background)));
+    const toggle = (id) => (_e, cx) => {
+      if (this.picked.has(id)) this.picked.delete(id); else { this.picked.add(id); this.withRemote = true; }
+      this.error = null; cx.notify();
+    };
+    return v_flex().flex_none().gap(4)
+      .child(h_flex().gap(6).items_center()
+        .child(h_flex().id("remote-include").h(26).px(6).gap(8).items_center().rounded(6).cursor_pointer().hover((s) => s.bg(t.hover))
+          .on_click((_e, cx) => { this.withRemote = !this.withRemote; this.error = null; cx.notify(); })
+          .child(box(this.withRemote)).child(div().text_size(13).child(`Include ${this.remote.label} comments`)))
+        .child(div().text_size(12).text_color(t.dim).child(`${n} of ${items.length} picked`))
+        .child(div().flex_1())
+        .child(div().id("remote-choose").h(24).px(6).flex().items_center().rounded(5).text_size(12).text_color(t.dim).cursor_pointer()
+          .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => { this.remoteOpen = !this.remoteOpen; cx.notify(); })
+          .child(this.remoteOpen ? "Hide list" : "Choose…")))
+      .when(this.remoteOpen, (e) => e.child(v_flex().id("remote-items").max_h(150).overflow_y_scrollbar().p(4).rounded(8).border_1().border_color(t.border).bg(t.background)
+        .children(items.map((it) => h_flex().id(`remote-item-${it.id}`).h(26).flex_none().px(6).gap(8).items_center().rounded(5).cursor_pointer()
+          .hover((s) => s.bg(t.hover)).on_click(toggle(it.id))
+          .child(box(this.picked.has(it.id))).child(div().flex_1().min_w(0).truncate().text_size(13).child(it.label))))));
+  }
 
   send(cx) {
     const text = this.text(), agent = this.target();
     if (this.sending) return;
-    if (!text) { this.error = "Type a note first"; cx.notify(); return; }
+    if (!text || (props()?.general && !this.note.trim() && !this.remoteText())) {
+      this.error = this.remote ? "Type a note or include PR comments" : "Type a note first"; cx.notify(); return;
+    }
     if (!agent) { this.start(cx); return; }
     // Pasting into a busy agent's input can interleave with what it is doing; wait for idle.
     if (busy(agent)) { this.error = `${this.name(agent)} is ${agent.status}. Wait until it is idle, or pick another agent.`; cx.notify(); return; }
@@ -73,7 +115,7 @@ export class Dialog {
     const button = (id, text, primary, action, disabled) => h_flex().id(id).h(34).px(14).items_center().rounded(8).border_1()
       .border_color(primary ? t.solid : t.input).bg(primary ? t.solid : t.raised).text_color(primary ? t.solid_foreground : t.foreground).text_size(14).font_medium()
       .when(disabled, (e) => e.opacity(0.5)).when(!disabled, (e) => e.cursor_pointer().hover((s) => s.opacity(0.88)).on_click(action)).child(text);
-    const lines = this.context.split("\n"), shown = lines.slice(0, 600);
+    const full = this.full(), lines = full.split("\n"), shown = lines.slice(0, 600);
     const width = Math.max(...shown.map((l) => l.length)) * 7.8 + 24;
     const dot = (a) => div().size(8).rounded(4).bg(t[a.status] ?? t.unknown);
     const agentBox = (a, opens) => h_flex().id("to-box").h(30).px(10).gap(8).items_center().rounded(7).border_1().border_color(this.choosing ? t.accent : t.input).bg(t.raised)
@@ -106,19 +148,20 @@ export class Dialog {
                   .child(a.address === agent?.address ? svg("mods/review/check.svg").size(12).text_color(t.accent) : div().w(12)))))
             : agentBox(agent, false)))
       .child(Textarea.new(this.input).w_full().px(10).py(8).rounded(9).border_1().border_color(t.input).bg(t.background).text_size(14).text_color(t.foreground))
-      .when(Boolean(this.context), (el) => el.child(v_flex().flex_1().min_h(100).gap(4)
+      .when(Boolean(this.remote), (el) => el.child(this.remoteChooser(t)))
+      .when(Boolean(full), (el) => el.child(v_flex().flex_1().min_h(100).gap(4)
         .child(h_flex().items_center().gap(6)
           .child(div().text_size(13).text_color(t.dim).child(`Sent after your note · ${lines.length} lines`))
           .child(div().flex_1())
           .child(h_flex().id("context-copy").h(22).px(6).gap(4).items_center().rounded(4).text_size(13).text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.foreground).bg(t.hover))
-            .on_click((_e, cx) => { try { cx.write_to_clipboard(this.context); this.copied = true; } catch (e) { this.error = `Copy failed: ${e}`; } cx.notify(); })
+            .on_click((_e, cx) => { try { cx.write_to_clipboard(this.full()); this.copied = true; } catch (e) { this.error = `Copy failed: ${e}`; } cx.notify(); })
             .child(svg(`mods/review/${this.copied ? "check" : "copy"}.svg`).size(12)).child(this.copied ? "Copied" : "Copy")))
         .child(div().id("ask-context-x").flex_1().min_h(0).rounded(8).border_1().border_color(t.border).bg(t.background).overflow_x_scrollbar()
           .child(v_flex().id("ask-context").h_full().min_w(width).overflow_y_scrollbar().p(8)
             .font_family(settings().font_family ?? "JetBrains Mono").text_size(13).text_color(t.muted).whitespace_nowrap()
             .children(shown.map((l) => div().h(19).flex_none().child(l || " ")))
             .when(lines.length > shown.length, (el) => el.child(div().text_color(t.dim).child(`… ${lines.length - shown.length} more lines are sent too`)))))))
-      .when(this.context.length > 8000, (el) => el.child(div().text_size(13).text_color(t.blocked).whitespace_normal().child(`This is ${(this.context.length / 1024).toFixed(0)} KB pasted into the agent's terminal; some agents are slow or cut it short at this size.`)))
+      .when(full.length > 8000, (el) => el.child(div().text_size(13).text_color(t.blocked).whitespace_normal().child(`This is ${(full.length / 1024).toFixed(0)} KB pasted into the agent's terminal; some agents are slow or cut it short at this size.`)))
       .when(Boolean(this.error), (el) => el.child(div().text_size(13).text_color(t.ansi1).whitespace_normal().child(this.error)))
       .child(h_flex().items_center().gap(8)
         .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(blocked ? t.blocked : t.dim)

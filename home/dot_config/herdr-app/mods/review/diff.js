@@ -1,17 +1,18 @@
 // A space's Review tab: one file's diff at a time, from the session the Review panel shares,
 // with line comments, reviewed marks, hidden-context expansion and file navigation.
-import { div, image } from "gpui-kit";
+import { div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
 import { exec, readTextFile, theme, settings, shared, setShared, props, nextCommand, run, notify } from "herdr";
 import { tokenize, languageOf } from "./highlight.js";
 import { palette } from "./palette.js";
 import { ask, submitReview } from "./ask.js";
 import {
-  MODES, SESSIONS, TABS, TAB_ICONS, OPEN, CURRENT, prefs, setPref, zoom, git, storeBlob, reviewState, reviewMark, setReviewed,
+  MOD, MODES, SESSIONS, TABS, TAB_ICONS, OPEN, CURRENT, prefs, setPref, zoom, git, storeBlob, reviewState, reviewMark, setReviewed,
   draftsOf, setDrafts, historyOf, dismissSent, settlePending, pendingSent, describe, where,
+  ago, remoteOf, threadSpan, threadStatus, remoteItems, setThreadResolved,
 } from "./store.js";
-import { ago } from "./panel.js";
 import { fileIcon } from "./icon-map.js";
+import { fileTarget, openFileMenu, openInCode } from "./file-actions.js";
 
 /** Diff text size, from the terminal font size setting (px at zoom 1). */
 const font = () => Number(settings().font_size) || 14;
@@ -29,6 +30,8 @@ const BOX_H = 200;
 const MAX_LINES = 5000, MAX_ROWS = 20000;
 /** Blank space after the last row, px. */
 const END_PAD = 96;
+/** A PR thread card's header row, and the widths of its Resolve and GitHub buttons, which clicks are matched against. */
+const THREAD_HEAD = 34, RESOLVE_W = 84, GITHUB_W = 64, CARD_PAD_R = 22;
 const NONE = "#00000000";
 const HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
@@ -138,6 +141,12 @@ const descKey = (d) => `${d.kind}|${d.number}|${d.text}`;
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const plain = (e) => !e.modifiers?.platform && !e.modifiers?.control && !e.modifiers?.alt && !e.modifiers?.function;
 
+/** A PR comment as the diff shows it: at most 30 lines, the rest on GitHub. */
+function clipBody(body) {
+  const lines = body.split("\n");
+  return lines.length > 30 ? `${lines.slice(0, 30).join("\n")}\n…` : body;
+}
+
 export class DiffTab {
   init(_props, cx) {
     this.space = props()?.space ?? null;
@@ -147,6 +156,9 @@ export class DiffTab {
     this.composer = null; this.noteText = ""; this.press = null; this.shiftHeld = false; this.boxAt = null;
     this.text = null; this.opened = new Set(); this.wholeFile = false; this.shownGenerated = new Set(); this.sinceOff = new Set();
     this.loadedKey = null; this.loading = false; this.message = null; this.placeholder = null;
+    // PR threads: shown here whatever the panel's filters say (opened from the panel or just resolved),
+    // waiting to be scrolled to, highlighted, and being resolved or reopened.
+    this.keep = new Set(); this.seek = null; this.flash = null; this.resolving = new Set();
     this.scroll = VirtualListScrollHandle.new();
     this.note = TextareaState.new({ placeholder: "Leave a comment on these lines…", rows: 3 });
     this.note.set_auto_grow(3, 12);
@@ -239,6 +251,7 @@ export class DiffTab {
     cx.timer.after(1, (cx) => {
       this.go(req.path, cx);
       if (req.comment) this.commentFile(cx);
+      if (req.thread) { this.keep.add(req.thread); this.seek = { id: req.thread, at: Date.now() }; this.rebuild(); cx.notify(); }
     });
   }
 
@@ -419,12 +432,16 @@ export class DiffTab {
     const pos = new Map();
     base.forEach((it, j) => it.rows.forEach((r) => pos.set(r, j)));
     const under = new Map(), top = [], editing = this.composer?.editing ?? null;
+    /** Puts items under their last row; false when those rows aren't in this view. */
+    const put = (items, from, to) => {
+      const j = from < 0 || to < from ? -1 : Math.max(pos.get(from) ?? -1, pos.get(to) ?? -1);
+      if (j < 0) return false;
+      (under.get(j) ?? under.set(j, []).get(j)).push(...items.map((it) => ({ ...it, from, to })));
+      return true;
+    };
     const place = (it, c) => {
       if (c.whole) { top.push({ ...it, whole: true }); return; }
-      const from = this.at(c.from), to = this.at(c.to);
-      const j = from < 0 || to < from ? -1 : Math.max(pos.get(from) ?? -1, pos.get(to) ?? -1);
-      if (j < 0) { if (Boolean(c.since) === since) top.push({ ...it, detached: true }); return; }
-      (under.get(j) ?? under.set(j, []).get(j)).push({ ...it, from, to });
+      if (!put([it], this.at(c.from), this.at(c.to)) && Boolean(c.since) === since) top.push({ ...it, detached: true });
     };
     if (this.rows.length) {
       for (const c of this.comments()) {
@@ -438,6 +455,13 @@ export class DiffTab {
           place({ key: `s:${round.id}:${c.id}`, kind: "sent", at: round.at, text: c.text, comment: c, height: this.commentHeight(c.text) }, c);
         }
       }
+      // A thread is two items, so a click on its header (where the buttons are) can be told
+      // from one on its comments: the list reports only which item was clicked.
+      for (const th of this.threadsHere()) {
+        const items = [{ key: `g:${th.id}`, kind: "thread-head", thread: th, height: THREAD_HEAD }, { key: `gb:${th.id}`, kind: "thread-body", thread: th, height: this.threadHeight(th) }];
+        const [from, to] = this.anchor(th);
+        if (!put(items, from, to)) top.push(...items.map((it) => ({ ...it, detached: true })));
+      }
     }
     this.items = [...top];
     base.forEach((it, j) => { this.items.push({ ...it, height: row() }); for (const c of under.get(j) ?? []) this.items.push(c); });
@@ -446,10 +470,55 @@ export class DiffTab {
     this.sizes = this.items.map((it) => it.height);
   }
 
-  commentHeight(text) {
+  /** How many rows a comment's text wraps to at the card's width. */
+  wrapped(text) {
     const cpl = Math.max(24, Math.floor(((this.diffView || 600) - this.lead() - 48) / charW()));
-    const lines = text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / cpl)), 0);
-    return 44 + lines * 20;
+    return text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / cpl)), 0);
+  }
+
+  commentHeight(text) { return 44 + this.wrapped(text) * 20; }
+
+  /** The comments part of a thread card, under its header. */
+  threadHeight(th) { return 18 + th.comments.reduce((h, c) => h + 22 + this.wrapped(clipBody(c.body)) * 20, 0); }
+
+  /** The shown file's PR threads, by the panel's settings, plus any kept on screen here. */
+  threadsHere() {
+    const p = prefs();
+    return (remoteOf(this.session()?.remote)?.threads ?? []).filter((th) => th.path === this.path
+      && (this.keep.has(th.id) || (p.remoteInDiff && !(p.hideResolved && th.resolved))));
+  }
+
+  /**
+   * A click on a thread's header: its Resolve and GitHub buttons sit at the right edge, and
+   * clicks inside list items can only be told apart by where they landed.
+   */
+  clickThread(id, press, cx) {
+    const s = this.session(), th = (remoteOf(s?.remote)?.threads ?? []).find((x) => x.id === id), x = press?.x;
+    if (!s || !th || x === undefined) return;
+    const right = this.diffView - CARD_PAD_R;
+    if (x >= right - GITHUB_W && x <= right) { if (th.url) exec("open", [th.url]).catch(() => null); return; }
+    if (x < right - GITHUB_W - 6 - RESOLVE_W || x > right - GITHUB_W - 6 || this.resolving.has(id)) return;
+    this.resolving.add(id); this.keep.add(id);
+    cx.spawn(async (cx) => {
+      const error = await setThreadResolved(s.remote, s.root, s.on, id, !th.resolved);
+      this.resolving.delete(id);
+      if (error) notify({ title: th.resolved ? "Couldn't reopen the thread" : "Couldn't resolve the thread", body: error, level: "error" });
+      cx.notify();
+    });
+    cx.notify();
+  }
+
+  /**
+   * A PR thread's rows in the shown diff. GitHub numbers lines in the PR's head commit, so a
+   * thread is only placed in the Branch view with that commit checked out; else [-1, -1].
+   */
+  anchor(th) {
+    const s = this.session(), r = remoteOf(s?.remote);
+    if (th.file || !th.line || th.outdated || s?.mode !== "base" || !r?.head || r.head !== s.head || this.since(s)) return [-1, -1];
+    const left = th.side === "LEFT";
+    const find = (n) => this.rows.findIndex((row) => left ? row.oldNo === n && row.kind !== "+" : row.newNo === n && row.kind !== "-");
+    const to = find(th.line), from = th.start && th.start !== th.line ? find(th.start) : to;
+    return from < 0 ? [to, to] : [from, to];
   }
 
   /** The comment box's target rows in the shown diff, or null (also for a whole-file comment). */
@@ -465,7 +534,8 @@ export class DiffTab {
     this.press = null;
     // The box opens beside where the click landed; the list's scroll offset can't be read.
     this.boxAt = press?.y !== undefined ? { y: press.y, h: press.h } : null;
-    if (k === "end") return;
+    if (k.startsWith("g:")) { this.clickThread(k.slice(2), press, cx); return; }
+    if (k === "end" || k.startsWith("gb:")) return;
     if (k.startsWith("c:")) { if (k.slice(2) !== this.composer?.editing) this.editComment(k.slice(2), cx); return; }
     if (k.startsWith("s:")) { const [, round, id] = k.split(":"); dismissSent(this.session()?.key, round, id); return; }
     let i;
@@ -572,13 +642,14 @@ export class DiffTab {
     const span = this.span(rows), title = `${this.path}${span ? `:${span.replace(/^(removed )?lines? /, "")}` : ""}`;
     const words = this.since() ? "the changes since the last review" : s.scope?.words ?? "the shown changes";
     const head = indexes ? `In ${where(s, this.path)}, ${span || "these lines"} of the diff (${words}; new-file line numbers; - lines are removed):` : `The diff of ${where(s, this.path)} (${words}):`;
-    ask({ title, context: `${head}\n${this.quote(rows)}`, agent: s.agent });
+    const lines = indexes ? { new: rows.filter((r) => r.newNo !== undefined).map((r) => r.newNo), old: rows.filter((r) => r.oldNo !== undefined).map((r) => r.oldNo) } : null;
+    ask({ title, context: `${head}\n${this.quote(rows)}`, agent: s.agent, remote: remoteItems(s.remote, { path: this.path, lines }) });
     cx.notify();
   }
 
   submit(cx) {
     const s = this.session(), list = this.comments();
-    if (s && list.length) submitReview(s, list);
+    if (s) submitReview(s, list);
     cx.notify();
   }
 
@@ -622,8 +693,42 @@ export class DiffTab {
         .child(div().text_size(font()).whitespace_normal().text_color(it.text ? t.foreground : t.dim).child(it.text || "(empty)")));
   }
 
+  /** A PR thread's border color: highlighted when just opened from the panel, accented while open. */
+  threadBorder(th, t) {
+    const accent = t.ansi5 ?? t.accent;
+    return this.flash === th.id ? accent : th.resolved ? t.border : accent + "88";
+  }
+
+  /** A PR thread card's header: where it is, whether it's open, and its Resolve and GitHub buttons. */
+  threadHead(it, t) {
+    const th = it.thread, status = threadStatus(th), accent = t.ansi5 ?? t.accent, busy = this.resolving.has(th.id);
+    const away = it.detached && !th.file && th.line ? " · not on these lines in this view" : "";
+    const pill = (w, label, strong) => div().w(w).h(24).flex_none().flex().items_center().justify_center().rounded(6).text_size(12).cursor_pointer()
+      .border_1().border_color(strong ? accent : t.input).text_color(strong ? accent : t.muted).hover((st) => st.bg(t.hover)).child(label);
+    return div().w_full().h(it.height).flex_none().pl(this.lead()).pr(12).pt(4)
+      .child(h_flex().h_full().pl(10).pr(CARD_PAD_R - 12).gap(6).items_center().rounded_t(8).border_t(this.flash === th.id ? 2 : 1).border_x(this.flash === th.id ? 2 : 1)
+        .border_color(this.threadBorder(th, t)).bg(t.surface).when(th.resolved, (e) => e.opacity(0.75))
+        .child(svg(`mods/${MOD}/pr.svg`).size(13).flex_none().text_color(th.resolved ? t.dim : accent))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(th.resolved ? t.dim : accent).child(`PR thread · ${threadSpan(th)} · ${status}${away}`))
+        .child(pill(RESOLVE_W, busy ? "…" : th.resolved ? "Reopen" : "Resolve", !th.resolved && !busy))
+        .child(pill(GITHUB_W, "GitHub", false)));
+  }
+
+  /** A PR thread card's comments, each with its author. */
+  threadBody(it, t) {
+    const th = it.thread, wide = this.flash === th.id ? 2 : 1;
+    return div().w_full().h(it.height).flex_none().pl(this.lead()).pr(12).pb(4)
+      .child(v_flex().h_full().overflow_hidden().rounded_b(8).border_b(wide).border_x(wide).border_color(this.threadBorder(th, t)).bg(t.surface).px(10).pb(6).gap(3)
+        .when(th.resolved, (e) => e.opacity(0.75))
+        .children(th.comments.map((c) => v_flex().gap(0)
+          .child(div().h(18).text_size(12).text_color(t.muted).truncate().child(`@${c.author} · ${ago(c.at)}`))
+          .child(div().text_size(font()).whitespace_normal().text_color(t.foreground).child(clipBody(c.body))))));
+  }
+
   item(it, t, colors, target, commented) {
     if (it.kind === "end") return div().w_full().h(it.height).flex_none();
+    if (it.kind === "thread-head") return this.threadHead(it, t);
+    if (it.kind === "thread-body") return this.threadBody(it, t);
     if (it.kind === "comment" || it.kind === "sent") return this.card(it, t);
     if (it.kind === "pair") {
       return h_flex().w_full().h(row()).flex_none().cursor_pointer()
@@ -695,16 +800,21 @@ export class DiffTab {
     const icon = (id, label, enabled, action) => div().id(id).h(28).min_w(28).px(6).flex().flex_none().items_center().justify_center().rounded(6).text_size(14)
       .text_color(enabled ? t.muted : t.dim).when(!enabled, (e) => e.opacity(0.4))
       .when(enabled, (e) => e.cursor_pointer().hover((st) => st.bg(t.hover).text_color(t.foreground)).on_click(action)).child(label);
-    const parts = (this.path ?? "").split("/"), name = parts.pop();
+    const parts = (this.path ?? "").split("/"), name = parts.pop(), target = f ? fileTarget(s, f) : null;
+    const tool = (id, file, tip, action) => div().id(id).size(28).flex().flex_none().items_center().justify_center().rounded(6).cursor_pointer()
+      .text_color(t.muted).hover((st) => st.bg(t.hover).text_color(t.foreground)).tooltip(tip).on_click(action).child(svg(`mods/${MOD}/${file}.svg`).size(15));
     return h_flex().flex_none().h(44).px(10).gap(6).items_center().border_b(1).border_color(t.border)
       .child(icon("hist-back", "←", this.back.length > 0, (_e, cx) => this.history(-1, cx)))
       .child(icon("hist-fwd", "→", this.fwd.length > 0, (_e, cx) => this.history(1, cx)))
       .child(div().w(1).h(18).mx(2).bg(t.border))
       .when(Boolean(f), (e) => e.child(div().w(14).flex_none().text_size(13).text_color(f.status === "A" ? t.ansi2 : f.status === "D" || f.status === "U" ? t.ansi1 : t.blocked).child(f.status)))
       .when(Boolean(this.path), (e) => e.child(image(fileIcon(this.path.split("/").pop(), settings().dark !== false)).size(18).flex_none()))
-      .child(h_flex().flex_1().min_w(0).text_size(15)
+      .child(h_flex().id("file-path").flex_1().min_w(0).text_size(15)
+        .when(Boolean(target), (e) => e.on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openFileMenu(target); }))
         .child(div().text_color(t.dim).truncate().child(parts.length ? parts.join("/") + "/" : ""))
         .child(div().flex_none().max_w("70%").truncate().font_medium().child(name ?? "")))
+      .when(Boolean(target) && !target.on && target.status !== "D", (e) => e.child(tool("file-code", "code", "Open in VS Code (o)", () => openInCode(target))))
+      .when(Boolean(target), (e) => e.child(tool("file-actions", "ellipsis", "File actions", () => openFileMenu(target))))
       .when(Boolean(f), (e) => e
         .when(f.add > 0, (el) => el.child(div().text_size(13).text_color(t.ansi2).child(`+${f.add}`)))
         .when(f.del > 0, (el) => el.child(div().text_size(13).text_color(t.ansi1).child(`−${f.del}`))))
@@ -741,7 +851,21 @@ export class DiffTab {
       .when(n > 0, (e) => e
         .child(div().id("review-discard").h(26).px(8).flex().items_center().rounded(6).text_size(13).text_color(t.dim).cursor_pointer().hover((st) => st.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.setComments([], cx)).child("Discard"))
         .child(button("review-submit", `Submit review · ${n}`, true, (_e, cx) => this.submit(cx))))
-      .when(n === 0 && canAsk, (e) => e.child(button("ask", "Ask about diff", false, (_e, cx) => this.askAbout(null, cx))));
+      .when(n === 0 && canAsk, (e) => e.child(button("ask", "Ask about diff", false, (_e, cx) => this.askAbout(null, cx))))
+      .when(n === 0 && Boolean(s), (e) => e.child(button("review-send", "Send review", false, (_e, cx) => this.submit(cx))));
+  }
+
+  /**
+   * Scrolls to the PR thread the panel asked for once the file's rows are in, and highlights it
+   * for a moment. Gives up after 5 s (the file can't be shown, or the thread isn't on it).
+   */
+  seekThread(s, cx) {
+    if (!this.seek) return;
+    const id = this.seek.id, idx = this.items.findIndex((it) => it.key === `g:${id}`);
+    if (idx < 0) { if (Date.now() - this.seek.at > 5000) this.seek = null; else cx.timer.after(250, (cx) => cx.notify()); return; }
+    this.seek = null; this.flash = id;
+    cx.timer.after(1, () => this.scroll.scroll_to_item(idx, "center"));
+    cx.timer.after(1800, (cx) => { if (this.flash === id) { this.flash = null; cx.notify(); } });
   }
 
   setView(view, cx) {
@@ -767,8 +891,9 @@ export class DiffTab {
     if (e.key === "escape" && this.composer) { this.closeComposer(cx); cx.stop_propagation(); return; }
     if (e.key === "enter" && (e.modifiers?.platform || e.modifiers?.control) && this.composer) { this.addComment(cx); cx.stop_propagation(); return; }
     if (this.composer || !plain(e)) return;
-    const k = e.key, shift = e.modifiers?.shift;
+    const k = e.key, shift = e.modifiers?.shift, s = this.session(), f = this.file(s);
     const act = {
+      o: () => { if (f && !s.on && f.status !== "D") openInCode(fileTarget(s, f)); },
       n: () => this.step(1, cx), j: () => this.step(1, cx), p: () => this.step(-1, cx), k: () => this.step(-1, cx),
       v: () => this.toggleReviewed(cx), r: () => this.reviewAndNext(cx), c: () => this.commentFile(cx),
       s: () => this.setView(prefs().view === "split" ? "unified" : "split", cx), e: () => this.setWholeFile(!this.wholeFile, cx),
@@ -793,8 +918,11 @@ export class DiffTab {
     if (this.loadKey(s, f) !== this.loadedKey) this.load(cx);
     // Drafts and sent reviews change from other copies (the panel's Discard, a send).
     if (font() !== this.fontSize) { this.fontSize = font(); this.layoutRows(); }
-    const stamp = JSON.stringify([draftsOf(s?.key).filter((c) => c.path === this.path), historyOf(s?.key).map((r) => r.dismissed?.length ?? 0), historyOf(s?.key).length, prefs().view, font()]);
+    const remote = remoteOf(s?.remote);
+    const stamp = JSON.stringify([draftsOf(s?.key).filter((c) => c.path === this.path), historyOf(s?.key).map((r) => r.dismissed?.length ?? 0), historyOf(s?.key).length, prefs().view, font(),
+      remote?.at ?? null, remote?.rev ?? null, s?.head ?? null, s?.mode ?? null, prefs().remoteInDiff, prefs().hideResolved]);
     if (stamp !== this.stamp) { this.stamp = stamp; this.rebuild(); }
+    this.seekThread(s, cx);
     const t = theme(), colors = palette("theme", t), target = this.target();
     const commented = new Set();
     for (const it of this.items) if (it.kind === "comment" && it.from !== undefined) for (let j = it.from; j <= it.to; j++) commented.add(j);
@@ -811,6 +939,11 @@ export class DiffTab {
         (range) => this.items.slice(range.start, range.end).map((it) => this.item(it, t, colors, target, commented))).size_full().track_scroll(this.scroll)
         .on_item_click((k, cx) => this.clickItem(k, cx))
         .on_item_secondary_click((k, _e, cx) => {
+          if (k.startsWith("g:") || k.startsWith("gb:")) {
+            const id = k.slice(k.indexOf(":") + 1), url = (remote?.threads ?? []).find((th) => th.id === id)?.url;
+            if (url) exec("open", [url]).catch(() => null);
+            return;
+          }
           if (!k.startsWith("r:") && !k.startsWith("p:")) return;
           const it = this.items.find((x) => x.key === k), i = it?.kind === "pair" ? it.r ?? it.l : it?.i, r = this.rows[i];
           if (!r || r.kind === "" || r.kind === "~") return;
@@ -831,7 +964,7 @@ export class DiffTab {
         .child(div().id("show-generated").h(30).px(12).flex().items_center().self_start().rounded(7).bg(t.raised).cursor_pointer().hover((st) => st.bg(t.hover))
           .on_click((_e, cx) => { this.shownGenerated.add(f.path); cx.notify(); }).child("Show diff"))))
       .when(Boolean(f && this.rows.length) && !this.composer && !generated, (e) => e.child(div().absolute().bottom(16).right(14).px(8).py(3).rounded(6).bg(t.raised + "e0").text_size(12).text_color(t.dim)
-        .child("click a line to comment · right-click to ask · n/p files · v reviewed · r reviewed & next · c file comment · s split · e whole file · w whitespace")))
+        .child("click a line to comment · right-click to ask · n/p files · v reviewed · r reviewed & next · c file comment · o VS Code · s split · e whole file · w whitespace")))
       .when(Boolean(this.composer), (e) => e.child(this.box(t, target)));
 
     // Mouse moves arrive only while the pointer is over the tab, so leaving it ends a drag.

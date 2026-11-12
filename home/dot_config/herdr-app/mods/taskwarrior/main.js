@@ -323,9 +323,11 @@ export default class Taskwarrior extends View {
     const blocked = (task.depends ?? []).some((u) => byUuid.has(u));
     const notes = task.annotations?.length ?? 0;
     const prio = { H: t.blocked, M: t.working, L: t.dim }[task.priority];
+    // An open task keeps the surface color and gets a border instead of `raised`: themes such as
+    // Atom One Dark make `raised` nearly the text selection color, hiding drag-selections.
     return v_flex().id(`task-${task.uuid}`).px(8).py(6).gap(4).rounded(7).flex_none()
-      .bg(open ? t.raised : t.surface)
-      .hover((s) => s.bg(open ? t.raised : t.hover))
+      .bg(t.surface).border_1().border_color(open ? t.border : t.surface)
+      .hover((s) => s.bg(open ? t.surface : t.hover))
       .on_click((_e, cx) => {
         if (open) this.expanded.delete(task.uuid); else this.expanded.add(task.uuid);
         cx.notify();

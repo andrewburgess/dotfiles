@@ -56,12 +56,28 @@ export function check(c) {
 }
 
 /**
+ * Keeps only the most recent run of each check, so a run superseded by a rerun (often
+ * cancelled by a concurrency group) doesn't count. Matches `gh pr checks`.
+ * @param rollup A PR's `statusCheckRollup`
+ * @returns The newest entry per check, by start time
+ */
+export function latest(rollup) {
+  const key = (c) => c.__typename === "StatusContext" ? `s|${c.context}` : `r|${c.workflowName}|${c.name}`;
+  const newest = new Map();
+  for (const c of rollup ?? []) {
+    const prev = newest.get(key(c));
+    if (!prev || (c.startedAt ?? "") > (prev.startedAt ?? "")) newest.set(key(c), c);
+  }
+  return [...newest.values()];
+}
+
+/**
  * The overall result of a PR's checks: any failure wins, then anything still running.
  * @param rollup A PR's `statusCheckRollup`
  * @returns "fail" | "pending" | "pass", or null when no checks reported
  */
 export function overall(rollup) {
-  const results = (rollup ?? []).map((c) => check(c).result);
+  const results = latest(rollup).map((c) => check(c).result);
   if (!results.length) return null;
   return results.includes("fail") ? "fail" : results.includes("pending") ? "pending" : "pass";
 }

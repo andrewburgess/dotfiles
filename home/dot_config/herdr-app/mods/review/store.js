@@ -30,6 +30,8 @@ export const HISTORY = "review.history";
 export const PENDING = "review.pending";
 /** Shared key: the icon each diff tab shows in the tab bar `{ [tabId]: path }`, for the open file's type. */
 export const TAB_ICONS = "review.tabIcons";
+/** Shared key: each repo's pull request comments `{ [remoteKey]: Remote }`, fetched by the panel. */
+export const REMOTE = "review.remote";
 
 /** Diff sources the panel can show. */
 export const MODES = [
@@ -38,9 +40,12 @@ export const MODES = [
   { id: "turn", label: "Last turn" },
 ];
 
-const DEFAULTS = { view: "unified", listing: "flat", hideReviewed: false, whitespace: false, mode: "worktree", collapsed: {} };
+const DEFAULTS = { view: "unified", listing: "flat", hideReviewed: false, whitespace: false, mode: "worktree", collapsed: {}, remoteInDiff: true, hideResolved: true };
 
-/** Settings kept across spaces and restarts: view, listing, hideReviewed, whitespace, mode, collapsed. */
+/**
+ * Settings kept across spaces and restarts: view, listing, hideReviewed, whitespace, mode, collapsed,
+ * remoteInDiff (PR threads shown in the diff) and hideResolved (resolved PR threads left out).
+ */
 export function prefs() { return { ...DEFAULTS, ...(shared(PREFS) ?? {}) }; }
 
 export function setPref(key, value) { setShared(PREFS, { ...prefs(), [key]: value }); }
@@ -140,6 +145,15 @@ export function reviewState(session, file) {
   return !mark ? "none" : mark.sig === file.sig ? "done" : "changed";
 }
 
+/**
+ * Review state of many files at once, reading the shared marks a single time.
+ * @returns A map from file path to "none", "done", or "changed"
+ */
+export function reviewStates(session, files) {
+  const marks = (shared(REVIEWED) ?? {})[session?.key] ?? {};
+  return new Map(files.map((f) => { const mark = marks[f.path]; return [f.path, !mark ? "none" : mark.sig === f.sig ? "done" : "changed"]; }));
+}
+
 export const reviewMark = (session, path) => (shared(REVIEWED) ?? {})[session?.key]?.[path] ?? null;
 
 /**
@@ -229,3 +243,154 @@ export function reviewMessage(session, comments) {
   const round = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: Date.now(), comments: list };
   return { title: `Review · ${n} comment${s}`, context, round };
 }
+
+/** How long ago a time was, in words: "just now", "5m ago", "2d ago". */
+export function ago(ms) {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`;
+}
+
+// #region Pull request comments
+
+/** Branches whose PR lookup would find a stale PR that once used them as its head. */
+const MAIN_BRANCHES = new Set(["main", "master", "dev", "stage", "staging", "develop", "development", "trunk"]);
+
+const PR_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      comments(last: 100) { nodes { id author { login __typename } body createdAt url } }
+      reviews(last: 100) { nodes { id author { login __typename } body state submittedAt createdAt url } }
+      reviewThreads(first: 100) { nodes { id isResolved isOutdated path line startLine originalLine originalStartLine diffSide subjectType
+        comments(first: 50) { nodes { author { login __typename } body createdAt url } } } }
+    }
+  }
+}`;
+
+const REVIEW_STATES = { APPROVED: "approved", CHANGES_REQUESTED: "requested changes", COMMENTED: "commented", DISMISSED: "dismissed" };
+
+/** Where a repo's PR comments are kept in `REMOTE`. */
+export const remoteKey = (on, root) => root ? `${on ?? ""}:${root}` : null;
+
+export const remoteOf = (key) => key ? (shared(REMOTE) ?? {})[key] ?? null : null;
+
+const who = (a) => a?.login ?? "ghost";
+const isBot = (a) => a?.__typename === "Bot" || /(\[bot\]|-bot)$/.test(a?.login ?? "");
+const clip = (s, n = 4000) => { const t = String(s ?? "").trim(); return t.length > n ? `${t.slice(0, n)}…` : t; };
+const firstLine = (s) => (s || "").trim().split("\n")[0];
+
+/**
+ * Reads the pull request for a repo's current branch, and its comments, with `gh`.
+ * @returns A Remote `{ at, branch, number, url, title, head, error, threads, conversation }`. `number`
+ *   is null when the branch has no PR; `error` is set when `gh` failed.
+ */
+export async function fetchRemote(root, on) {
+  const at = Date.now(), branch = (await git(root, on, ["branch", "--show-current"])).stdout.trim();
+  const none = (error = null, pr = {}) => ({ at, branch, number: pr.number ?? null, url: pr.url ?? null, title: pr.title ?? null, head: pr.headRefOid ?? null, error, threads: [], conversation: [] });
+  if (!branch || MAIN_BRANCHES.has(branch)) return none();
+  const failed = (e) => ({ code: 1, stdout: "", stderr: String(e) });
+  const view = await exec("gh", ["pr", "view", "--json", "number,url,title,headRefOid"], { cwd: root, on }).catch(failed);
+  if (view.code !== 0) return /no (open )?pull requests? found/i.test(view.stderr) ? none() : none(firstLine(view.stderr) || "gh pr view failed");
+  const pr = JSON.parse(view.stdout), [, owner, name] = /github\.com\/([^/]+)\/([^/]+)\/pull\//.exec(pr.url ?? "") ?? [];
+  if (!owner) return none("Not a GitHub pull request", pr);
+  const r = await exec("gh", ["api", "graphql", "-f", `owner=${owner}`, "-f", `name=${name}`, "-F", `number=${pr.number}`, "-f", `query=${PR_QUERY}`], { cwd: root, on }).catch(failed);
+  if (r.code !== 0) return none(firstLine(r.stderr) || "gh api graphql failed", pr);
+  const data = JSON.parse(r.stdout).data?.repository?.pullRequest;
+  const threads = (data?.reviewThreads?.nodes ?? []).map((t) => ({
+    id: t.id, path: t.path, file: t.subjectType === "FILE", side: t.diffSide, line: t.line ?? null, start: t.startLine ?? t.line ?? null,
+    oldLine: t.originalLine ?? null, oldStart: t.originalStartLine ?? t.originalLine ?? null, resolved: Boolean(t.isResolved), outdated: Boolean(t.isOutdated),
+    url: t.comments.nodes[0]?.url ?? pr.url,
+    comments: t.comments.nodes.map((c) => ({ author: who(c.author), body: clip(c.body), at: Date.parse(c.createdAt) })),
+  })).filter((t) => t.comments.length);
+  const conversation = [
+    ...(data?.comments?.nodes ?? []).map((c) => ({ id: c.id, kind: "comment", author: who(c.author), bot: isBot(c.author), body: clip(c.body), at: Date.parse(c.createdAt), url: c.url })),
+    ...(data?.reviews?.nodes ?? []).map((c) => ({ id: c.id, kind: "review", state: c.state, author: who(c.author), bot: isBot(c.author), body: clip(c.body), at: Date.parse(c.submittedAt ?? c.createdAt), url: c.url })),
+  ].filter((c) => c.body).sort((a, b) => a.at - b.at);
+  return { ...none(null, pr), threads, conversation };
+}
+
+/** Saves a fetched Remote, dropping repos not fetched in a week. */
+export function setRemote(key, remote) {
+  const week = Date.now() - 7 * 86400000;
+  const all = Object.fromEntries(Object.entries(shared(REMOTE) ?? {}).filter(([k, r]) => k !== key && r.at > week));
+  setShared(REMOTE, { ...all, [key]: remote });
+}
+
+/** Changes one thread of a saved Remote; `rev` tells the diff tabs to redraw. */
+function patchThread(key, id, change) {
+  const all = shared(REMOTE) ?? {}, rec = all[key];
+  if (!rec) return;
+  setShared(REMOTE, { ...all, [key]: { ...rec, rev: Date.now(), threads: rec.threads.map((t) => t.id === id ? { ...t, ...change } : t) } });
+}
+
+/**
+ * Resolves or reopens a PR review thread on GitHub. The saved thread changes at once and
+ * changes back if GitHub refuses.
+ * @param key The repo's `remoteKey`
+ * @param resolved True to resolve, false to reopen
+ * @returns null once GitHub accepted, else what went wrong
+ */
+export async function setThreadResolved(key, root, on, id, resolved) {
+  const name = resolved ? "resolveReviewThread" : "unresolveReviewThread";
+  const query = `mutation($id: ID!) { ${name}(input: { threadId: $id }) { thread { id isResolved } } }`;
+  patchThread(key, id, { resolved });
+  const r = await exec("gh", ["api", "graphql", "-f", `id=${id}`, "-f", `query=${query}`], { cwd: root, on }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
+  if (r.code === 0) return null;
+  patchThread(key, id, { resolved: !resolved });
+  return firstLine(r.stderr) || `gh exited ${r.code}`;
+}
+
+/** A review with no draft comments: what it is about, for a note or PR comments to go with. */
+export function generalMessage(session) {
+  const where = `${session.root}${session.on ? ` (on ${session.on})` : ""}`;
+  return { title: "Review · general feedback", context: `This is about the code review of ${where}: ${session.scope?.words ?? "the shown changes"}.` };
+}
+
+/** A thread's state in a word: "resolved", "outdated" or "open". */
+export const threadStatus = (t) => t.resolved ? "resolved" : t.outdated ? "outdated" : "open";
+
+/** Where a thread sits: "whole file", "line 94", "lines 90–94", or the line it had before it went outdated. */
+export function threadSpan(t) {
+  if (t.file) return "whole file";
+  const [a, b, was] = t.line ? [t.start, t.line, ""] : [t.oldStart, t.oldLine, "was "];
+  return !b ? "whole file" : a && a !== b ? `${was}lines ${a}–${b}` : `${was}line ${b}`;
+}
+
+/** Threads to show under current preferences. */
+export const shownThreads = (remote) => (remote?.threads ?? []).filter((t) => !(prefs().hideResolved && t.resolved));
+
+export const reviewWord = (c) => c.kind === "review" ? `review, ${REVIEW_STATES[c.state] ?? "commented"}` : "comment";
+
+function threadText(t) {
+  const side = t.side === "LEFT" && !t.file ? ", on the removed lines" : "";
+  return `### PR thread on ${t.path}, ${threadSpan(t)}${side} (${threadStatus(t)})\n${t.comments.map((c) => `@${c.author}: ${c.body}`).join("\n\n")}`;
+}
+
+const conversationText = (c) => `### PR ${reviewWord(c)} by @${c.author}, ${new Date(c.at).toISOString().slice(0, 10)}\n${c.body}`;
+
+/**
+ * The PR comments the send dialog offers. Open threads (and, for a whole review, people's
+ * conversation comments) start picked; resolved, outdated and bot ones don't.
+ * @param key The repo's `remoteKey`
+ * @param scope.path Only threads on this file
+ * @param scope.lines Only threads overlapping these line numbers `{ new: number[], old: number[] }` (with `path`)
+ * @returns `{ label, url, items: [{ id, label, text, on }] }`, or null when there is nothing to offer
+ */
+export function remoteItems(key, { path = null, lines = null } = {}) {
+  const r = remoteOf(key);
+  if (!r?.number) return null;
+  const overlaps = (t) => {
+    if (!lines) return true;
+    const nums = t.side === "LEFT" ? lines.old : lines.new;
+    return Boolean(t.line) && nums.some((n) => n >= (t.start ?? t.line) && n <= t.line);
+  };
+  const items = [
+    ...r.conversation.map((c) => ({ id: c.id, label: `@${c.author} · ${reviewWord(c)} · ${ago(c.at)}`, text: conversationText(c), on: !c.bot && !path })),
+    ...r.threads.filter((t) => (!path || t.path === path) && overlaps(t)).map((t) => ({
+      id: t.id, label: `${t.path.split("/").pop()} · ${threadSpan(t)} · @${t.comments[0].author} · ${threadStatus(t)}${t.comments.length > 1 ? ` · ${t.comments.length} comments` : ""}`,
+      text: threadText(t), on: !t.resolved && !t.outdated,
+    })),
+  ];
+  return items.length ? { label: `PR #${r.number}`, url: r.url, items } : null;
+}
+
+// #endregion
