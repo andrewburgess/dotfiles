@@ -147,9 +147,9 @@ export default class Tabs extends View {
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(3).overflow_x_scrollbar().children(shown.map(item)))
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
+      .child(panelButton("graph", "Git", "mods/git-graph/icons/graph.svg"))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Review", "mods/changes/changes.svg")))
       .child(panelButton("pr", prLabel, "mods/space-pr/pr.svg"))
-      .child(panelButton("graph", "Git", "mods/git-graph/icons/graph.svg"))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs-issues/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs-issues/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs-issues/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));
