@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, agents, theme, run, window, keys, exec, props, settings, shared, openOverlay, closeOverlay } from "herdr";
+import { spaces, agents, theme, run, window, keys, exec, props, settings, shared, openOverlay, closeOverlay, layout } from "herdr";
 import { VolumePopup, VOLUME_POPUP, VOLUME_HOVER_KEY, VOLUME_OPEN_KEY, VOLUME_CLOSE_DELAY_MS, volumeIcon } from "./volume.js";
 
 /** How often the Spotify segment re-reads the player, in ms. */
@@ -20,6 +20,31 @@ return "closed"`;
  * @param verb AppleScript player command, such as `playpause` or `next track`
  */
 const spotifyCommand = (verb) => `if application "Spotify" is running then tell application "Spotify" to ${verb}`;
+
+/**
+ * Side panels that aren't tied to a space, toggled from the status bar. Ids are children of the
+ * layout's `panel-body` stack; `mods/tabs-issues` keeps these out of its per-space memory.
+ */
+const GLOBAL_PANELS = [
+  { id: "issues", label: "Issues", icon: "mods/product-issues/issues.svg" },
+  { id: "tasks", label: "Tasks", icon: "mods/taskwarrior/tasks.svg" },
+  { id: "appsignal", label: "AppSignal", icon: "mods/appsignal/appsignal.svg" },
+];
+
+/**
+ * Depth-first search of the layout tree.
+ * @param node Layout node to search from
+ * @param id Node id to find
+ * @returns The matching node, or null
+ */
+function find(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = find(child, id);
+    if (found) return found;
+  }
+  return null;
+}
 
 export default class MyStatus extends View {
   init(_props, cx) {
@@ -96,6 +121,23 @@ export default class MyStatus extends View {
           .child(svg(volumeIcon(Number.isFinite(s.volume) ? s.volume : 100)).size(12))));
   }
 
+  panelsSegment(t) {
+    const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
+    const available = GLOBAL_PANELS.filter(p => body?.children?.some(c => c.id === p.id));
+    if (!panel || available.length === 0) return null;
+    return h_flex().gap(2).items_center().children(available.map(({ id, label, icon }) => {
+      const on = !panel.hidden && body.active === id;
+      return h_flex().id(`status-panel-${id}`).h(20).px(6).gap(5).items_center().rounded(5)
+        .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
+        .hover(s => s.bg(t.hover).text_color(t.foreground))
+        .on_click(() => {
+          if (on) run("layout.hide", { id: "panel" });
+          else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }
+        })
+        .child(svg(icon).size(12)).child(label);
+    }));
+  }
+
   // The palette key as actually bound, not a hardcoded one; without a
   // binding the hint stays useful ("commands") instead of lying.
   hint(t) {
@@ -119,12 +161,14 @@ export default class MyStatus extends View {
     const needs = list.filter(a => a.status === "blocked").length;
     const label = (icon, text) => h_flex().gap(6).items_center().child(svg(`mods/workspace-chrome/${icon}.svg`).size(13)).child(text);
     const spotify = this.spotifySegment(t);
+    const globalPanels = this.panelsSegment(t);
     return h_flex().size_full().px(14).gap(16).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(11.8).text_color(t.muted)
       .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
       .when(Boolean(space?.branch), el => el.child(label("branch", space.branch)))
       .child(h_flex().gap(6).items_center().child(div().size(6).rounded(3).bg(t.dim)).child(`${list.length} agents`)
         .when(needs > 0, el => el.child(div().text_color(t.blocked).child(`· ${needs} needs you`))))
       .child(div().flex_1())
+      .when(Boolean(globalPanels), el => el.child(globalPanels))
       .child(div().id("palette").text_color(t.dim).on_click(() => run("app.palette")).child(this.hint(t)))
       .when(Boolean(spotify), el => el.child(spotify));
   }

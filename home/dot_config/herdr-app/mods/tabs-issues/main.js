@@ -6,6 +6,9 @@ import { location, overall, readyToMerge, onMainBranch } from "./pr-detect.js";
 const PR_WATCH_MS = 2000;
 const PR_REFRESH_MS = 60 * 1000;
 
+/** Side panels that aren't tied to a space; their toggles live in the status bar (`mods/my-status`). */
+const GLOBAL_PANELS = ["issues", "tasks", "appsignal"];
+
 function find(node, id) {
   if (node?.id === id) return node;
   for (const child of node?.children ?? []) {
@@ -49,14 +52,22 @@ export default class Tabs extends View {
 
   // The side panel is remembered per space: switching shows that space's choice
   // (closed if it never had one), and opening or closing it records it.
+  // A global panel stays open across spaces and never overwrites a space's choice.
   syncPanel(space, panel, body, enabled) {
     if (!space || !panel) return;
     const now = panel.hidden ? null : body?.active ?? null;
+    const wasGlobal = GLOBAL_PANELS.includes(this.lastPanel);
+    this.lastPanel = now;
+    if (GLOBAL_PANELS.includes(now) || (wasGlobal && now === null)) {
+      this.space = space.id; this.pending = null;
+      return;
+    }
     if (space.id !== this.space) {
       const first = this.space === undefined;
       this.space = space.id; this.pending = null;
       if (!(first && !(space.id in this.panels))) {
-        const stored = this.panels[space.id] ?? null, want = enabled.includes(stored) ? stored : null;
+        const stored = this.panels[space.id] ?? null;
+        const want = enabled.includes(stored) && !GLOBAL_PANELS.includes(stored) ? stored : null;
         if (want !== now) {
           this.pending = { want, until: Date.now() + 1000 };
           if (want) { run("layout.select", { stack: "panel-body", child: want }); run("layout.show", { id: "panel" }); }
@@ -110,7 +121,7 @@ export default class Tabs extends View {
       ? Math.max(10, (root.traffic_lights[0] + 64) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
       : 10;
     const panel = find(root, "panel"), body = find(root, "panel-body");
-    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "issues", "pr", "tasks"];
+    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "pr"];
     this.syncPanel(space, panel, body, enabled);
     const pr = this.prs.get(this.prKey);
     const dot = pr?.state === "OPEN" ? { fail: t.blocked, pending: t.working, pass: t.ansi2 }[pr.checks] : null;
@@ -137,9 +148,7 @@ export default class Tabs extends View {
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Review", "mods/changes/changes.svg")))
-      .child(panelButton("issues", "Issues", "mods/product-issues/issues.svg"))
       .child(panelButton("pr", prLabel, "mods/space-pr/pr.svg"))
-      .child(panelButton("tasks", "Tasks", "mods/taskwarrior/tasks.svg"))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs-issues/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs-issues/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs-issues/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));
