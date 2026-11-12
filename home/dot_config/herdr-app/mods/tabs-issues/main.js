@@ -121,7 +121,7 @@ export default class Tabs extends View {
       ? Math.max(10, (root.traffic_lights[0] + 64) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
       : 10;
     const panel = find(root, "panel"), body = find(root, "panel-body");
-    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "pr"];
+    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "pr", "graph"];
     this.syncPanel(space, panel, body, enabled);
     const pr = this.prs.get(this.prKey);
     const dot = pr?.state === "OPEN" ? { fail: t.blocked, pending: t.working, pass: t.ansi2 }[pr.checks] : null;
@@ -149,6 +149,7 @@ export default class Tabs extends View {
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Review", "mods/changes/changes.svg")))
       .child(panelButton("pr", prLabel, "mods/space-pr/pr.svg"))
+      .child(panelButton("graph", "Git", "mods/git-graph/icons/graph.svg"))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs-issues/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs-issues/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs-issues/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));
