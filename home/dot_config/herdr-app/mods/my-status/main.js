@@ -162,14 +162,16 @@ export default class MyStatus extends View {
     const label = (icon, text) => h_flex().gap(6).items_center().child(svg(`mods/workspace-chrome/${icon}.svg`).size(13)).child(text);
     const spotify = this.spotifySegment(t);
     const globalPanels = this.panelsSegment(t);
+    // The two sides share the leftover width equally (flex_1 has a zero basis), which keeps Spotify centered.
     return h_flex().size_full().px(14).gap(16).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(11.8).text_color(t.muted)
-      .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
-      .when(Boolean(space?.branch), el => el.child(label("branch", space.branch)))
-      .child(h_flex().gap(6).items_center().child(div().size(6).rounded(3).bg(t.dim)).child(`${list.length} agents`)
-        .when(needs > 0, el => el.child(div().text_color(t.blocked).child(`· ${needs} needs you`))))
-      .child(div().flex_1())
-      .when(Boolean(globalPanels), el => el.child(globalPanels))
-      .child(div().id("palette").text_color(t.dim).on_click(() => run("app.palette")).child(this.hint(t)))
-      .when(Boolean(spotify), el => el.child(spotify));
+      .child(h_flex().flex_1().min_w(0).gap(16).items_center().overflow_hidden()
+        .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
+        .when(Boolean(space?.branch), el => el.child(label("branch", space.branch)))
+        .child(h_flex().gap(6).items_center().child(div().size(6).rounded(3).bg(t.dim)).child(`${list.length} agents`)
+          .when(needs > 0, el => el.child(div().text_color(t.blocked).child(`· ${needs} needs you`)))))
+      .when(Boolean(spotify), el => el.child(spotify))
+      .child(h_flex().flex_1().min_w(0).gap(16).items_center().justify_end()
+        .when(Boolean(globalPanels), el => el.child(globalPanels))
+        .child(div().id("palette").flex_none().text_color(t.dim).on_click(() => run("app.palette")).child(this.hint(t))));
   }
 }
