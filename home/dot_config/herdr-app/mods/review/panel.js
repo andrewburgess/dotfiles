@@ -621,7 +621,8 @@ export class Panel {
 
   fileRow(t, s, f, depth, ctx) {
     const parts = f.path.split("/"), name = parts.pop(), k = ctx.perFile[f.path], state = ctx.states.get(f.path) ?? "none", shown = ctx.current === f.path, open = ctx.threads[f.path];
-    return h_flex().id(`change-${f.path}`).h(ROW_H).flex_none().pl(8 + depth * INDENT).pr(8).gap(8).items_center().rounded(7).cursor_pointer()
+    // In the tree, a file's checkbox lines up with its sibling folders' checkboxes (past their 12px arrow and 6px gap).
+    return h_flex().id(`change-${f.path}`).h(ROW_H).flex_none().pl(ctx.tree ? 6 + 12 + 6 + depth * INDENT : 8).pr(8).gap(8).items_center().rounded(7).cursor_pointer()
       .when(shown, (e) => e.bg(t.selected)).hover((st) => st.bg(t.hover)).on_click((_e, cx) => this.openFile(f.path, cx))
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openFileMenu(fileTarget(s, f)); })
       .child(div().id(`reviewed-${f.path}`).cursor_pointer().on_click((_e, cx) => { cx.stop_propagation(); this.toggleReviewed(f, cx); }).child(this.box(t, state)))
