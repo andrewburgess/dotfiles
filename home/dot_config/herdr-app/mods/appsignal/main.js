@@ -22,6 +22,9 @@ const TOKEN_FILE = "Library/Application Support/appsignal/config.toml";
 const TIMEFRAMES = [["R1H", "1h"], ["R4H", "4h"], ["R8H", "8h"], ["R12H", "12h"], ["R24H", "24h"], ["R48H", "48h"], ["R7D", "7d"], ["R30D", "30d"]];
 const DEFAULT_TIMEFRAME = "R24H";
 const MAX_SERIES = 8;
+
+/** Most series that can be selected at once; drawing more paths per frame makes the render time out. */
+const MAX_PICKED = 12;
 const CHART_H = 120;
 const PLOT_TOP = 6;
 const PLOT_BOTTOM = 97;
@@ -1172,7 +1175,7 @@ export default class AppSignal extends View {
   pickSeries(v, d, label, cx) {
     this.picked = new Map(this.picked);
     const set = new Set(this.picked.get(v.id));
-    if (!set.delete(label)) set.add(label);
+    if (!set.delete(label) && set.size < MAX_PICKED) set.add(label);
     this.picked.set(v.id, set);
     d.geometry = chartGeometry(v, d, set);
     cx.notify();
@@ -1197,6 +1200,8 @@ export default class AppSignal extends View {
     const picked = this.picked?.get(v.id);
     const filtered = Boolean(picked?.size);
     const open = Boolean(this.expanded?.has(v.id));
+    // Keyed by position in the full series list, so a series keeps its color when a selection filters the chart.
+    const colorAt = (k) => colors[d.series.indexOf(g?.shown[k]) % colors.length];
     const card = v_flex().p(10).gap(6).flex_none().rounded(8).border_1().border_color(t.border).bg(t.background)
       .child(h_flex().gap(8).items_center()
         .child(div().flex_1().min_w(0).truncate().text_size(14).font_semibold().text_color(t.foreground).child(v.title ?? "Untitled"))
@@ -1209,8 +1214,8 @@ export default class AppSignal extends View {
     const paint = (path, color) => window.paint_path(path, color).absolute().top(0).left(0).size_full();
     const plot = div().id(`plot-${v.id}`).relative().w_full().h(CHART_H)
       .child(paint(g.grid, t.border))
-      .children(g.bands.map((b, k) => b && paint(b, Background.solid(colors[k % colors.length]).opacity(0.22))).filter(Boolean))
-      .children(g.lines.map((l, k) => l && paint(l, colors[k % colors.length])).filter(Boolean))
+      .children(g.bands.map((b, k) => b && paint(b, Background.solid(colorAt(k)).opacity(0.22))).filter(Boolean))
+      .children(g.lines.map((l, k) => l && paint(l, colorAt(k))).filter(Boolean))
       .when(hoverAt != null, (el) => el.child(paint(PathBuilder.stroke(1).move_to(plotX(g.xs[hoverAt]), "0%").line_to(plotX(g.xs[hoverAt]), "100%").build(), t.muted)))
       .child(div().absolute().top(0).left(0).text_size(10).text_color(t.dim).child(formatMetric(g.hi, v, d.resolution)))
       .on_mouse_move((e, cx) => {
@@ -1235,7 +1240,7 @@ export default class AppSignal extends View {
         const idx = g.shown.indexOf(s);
         return h_flex().id(`series-${v.id}-${k}`).gap(6).items_center().text_size(12)
         .on_click((_e, cx) => this.pickSeries(v, d, s.label, cx))
-        .child(div().size(8).rounded(2).flex_none().bg(idx >= 0 ? colors[idx % colors.length] : t.dim))
+        .child(div().size(8).rounded(2).flex_none().bg(idx >= 0 ? colorAt(idx) : t.dim))
         .child(div().flex_1().min_w(0).truncate().text_color(filtered && idx < 0 ? t.dim : t.muted).child(s.label))
         .child(div().flex_none().text_color(t.foreground).child(formatMetric(at(s), v, d.resolution)));
       })))
@@ -1246,7 +1251,7 @@ export default class AppSignal extends View {
       .when(filtered, (el) => el.child(div().id(`clear-${v.id}`).pl(14).text_size(12).text_color(t.dim)
         .hover((s) => s.text_color(t.foreground))
         .on_click((_e, cx) => this.clearPicked(v, d, cx))
-        .child("Clear selection")))
+        .child(picked.size >= MAX_PICKED ? `Clear selection (max ${MAX_PICKED})` : "Clear selection")))
       .when(!filtered && g.hidden > 0, (el) => el.child(div().id(`more-${v.id}`).pl(14).text_size(12).text_color(t.dim)
         .hover((s) => s.text_color(t.foreground))
         .on_click((_e, cx) => {
