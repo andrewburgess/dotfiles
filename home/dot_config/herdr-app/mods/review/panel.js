@@ -581,7 +581,7 @@ export class Panel {
     return v_flex().flex_none().mx(10).mt(4).p(6).gap(4).rounded(8).border_1().border_color(t.border).bg(t.popover ?? t.raised).text_size(14)
       .child(div().id("base-filter").h(30).px(8).flex().items_center().rounded(6).border_1().border_color(t.input ?? t.border).cursor_text()
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.search).h_full().text_size(14).text_color(t.foreground)))
-      .child(v_flex().id("base-list").max_h(220).overflow_y_scrollbar()
+      .child(v_flex().id("base-list").max_h(Math.min(360, Math.max(100, (this.panelHeight ?? 600) / (Number(settings().zoom) || 1) - 240))).overflow_y_scrollbar()
         .child(item("base-auto", "Auto-detect", null, !chosen))
         .children(matches.map((b) => item(`base-${b}`, b, b, chosen === b))));
   }
@@ -734,7 +734,9 @@ export class Panel {
         .bg(n ? t.solid : t.raised).text_color(n ? t.solid_foreground : t.foreground)
         .on_click((_e, cx) => this.submit(cx)).child(n ? `Submit review · ${n}` : "Send review")) : null;
 
-    return v_flex().id("changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(15).track_focus(this.handle)
+    return v_flex().id("changes")
+      .on_size_change((size, cx) => { if (size.height !== this.panelHeight) { this.panelHeight = size.height; cx.notify(); } })
+      .size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(15).track_focus(this.handle)
       .on_key_down((e, cx) => {
         if (e.key === "escape" && this.picking) { this.picking = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); return; }
         if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); }
