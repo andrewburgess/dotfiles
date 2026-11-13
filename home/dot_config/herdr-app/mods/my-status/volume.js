@@ -1,6 +1,6 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, Slider, SliderState, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
-import { exec, theme, closeOverlay, setShared } from "herdr";
+import { exec, theme, settings, closeOverlay, setShared } from "herdr";
 
 /** Popup size in logical px; the status bar uses it to place the popup above the icon. */
 export const VOLUME_POPUP = { width: 52, height: 172 };
@@ -26,10 +26,10 @@ export const volumeIcon = (volume) =>
 
 /**
  * The floating volume slider shown by the status bar's speaker icon. Lives in an overlay copy of
- * `my-status` opened with `props.volumePopup`.
+ * `my-status` opened with `props.volumePopup`. `initialVolume` seeds the slider until Spotify's live value is read.
  */
 export class VolumePopup {
-  constructor(overlay, onChange, cx) {
+  constructor(overlay, onChange, cx, initialVolume) {
     this.overlay = overlay;
     this.onChange = onChange;
     this.hovered = false;
@@ -39,7 +39,7 @@ export class VolumePopup {
     setShared(VOLUME_OPEN_KEY, true);
     setShared(VOLUME_HOVER_KEY, false);
 
-    this.state = SliderState.new({ min: 0, max: 100, step: 1, value: 50 });
+    this.state = SliderState.new({ min: 0, max: 100, step: 1, value: Number.isFinite(initialVolume) ? initialVolume : 50 });
     this.state.on("change", (v, cx) => {
       this.dragging = true;
       this.send(v, cx);
@@ -93,15 +93,18 @@ export class VolumePopup {
   render() {
     const t = theme();
     const volume = Math.round(this.state.value());
+    // The overlay window is sized in logical px but element sizes are zoomed units.
+    const zoom = Number(settings().zoom) || 1;
+    const width = VOLUME_POPUP.width / zoom, height = VOLUME_POPUP.height / zoom;
     // Popups size to their content, so the slider needs a fixed height or its track collapses.
-    return v_flex().id("volume-root").w(VOLUME_POPUP.width).h(VOLUME_POPUP.height).py(10).gap(8).items_center().text_size(11).text_color(t.muted)
+    return v_flex().id("volume-root").w(width).h(height).py(10).gap(8).items_center().text_size(11).text_color(t.muted)
       .on_hover((h, cx) => {
         this.hovered = h;
         setShared(VOLUME_HOVER_KEY, h);
         if (!h && !this.dragging) this.scheduleClose(cx);
       })
       .child(div().child(`${volume}`))
-      .child(Slider.new(this.state).axis("vertical").h(VOLUME_POPUP.height - 72).w(24).child(
+      .child(Slider.new(this.state).axis("vertical").h(height - 72).w(24).child(
         SliderTrack.new(this.state).axis("vertical").flex().justify_center().h_full().w(24).child(
           SliderIndicator.new(this.state).axis("vertical")
             .relative().h_full().w(4).rounded(2).bg(t.border)

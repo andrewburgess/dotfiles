@@ -50,7 +50,7 @@ export default class MyStatus extends View {
   init(_props, cx) {
     const p = props();
     if (p?.volumePopup) {
-      this.popup = new VolumePopup(p.overlay, () => {}, cx);
+      this.popup = new VolumePopup(p.overlay, () => {}, cx, p.volume);
       return;
     }
     this.spotify = null;
@@ -77,13 +77,12 @@ export default class MyStatus extends View {
     });
   }
 
-  // Mouse bounds are unzoomed window px while overlay positions are logical px.
-  openVolume(bounds) {
+  // Mouse bounds and overlay positions are both logical window px.
+  openVolume(bounds, volume) {
     if (shared(VOLUME_OPEN_KEY)) return;
-    const zoom = Number(settings().zoom) || 1;
-    const x = (bounds.x + bounds.width / 2) / zoom - VOLUME_POPUP.width / 2;
-    const y = bounds.y / zoom - VOLUME_POPUP.height - 6;
-    this.volumePopup = openOverlay({ mod: "my-status", kind: "popup", ...VOLUME_POPUP, at: { x, y }, props: { volumePopup: true } });
+    const x = bounds.x + bounds.width / 2 - VOLUME_POPUP.width / 2;
+    const y = bounds.y - VOLUME_POPUP.height - 6;
+    this.volumePopup = openOverlay({ mod: "my-status", kind: "popup", ...VOLUME_POPUP, at: { x, y }, props: { volumePopup: true, volume: Number.isFinite(volume) ? volume : undefined } });
   }
 
   leaveVolume(cx) {
@@ -113,7 +112,7 @@ export default class MyStatus extends View {
         .child(button("spotify-toggle", s.playing ? "pause" : "play", "playpause"))
         .child(button("spotify-next", "skip-forward", "next track"))
         .child(div().id("spotify-volume").p(3).rounded(4).text_color(t.muted).hover((el) => el.bg(t.hover).text_color(t.foreground))
-          .on_mouse_move((e) => this.openVolume(e.bounds))
+          .on_mouse_move((e) => this.openVolume(e.bounds, s.volume))
           .on_hover((h, cx) => {
             this.volumeHovered = h;
             if (!h) this.leaveVolume(cx);
