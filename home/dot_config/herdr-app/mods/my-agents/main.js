@@ -3,7 +3,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import { agents, terminals, panes, focused, spaces, run, exec, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -27,6 +27,19 @@ function toggleSidebar() {
 }
 
 const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
+const base = (path) => path.replace(/\/+$/, "").split("/").pop();
+
+/**
+ * Where a space is now, the way the spaces sidebar reads it: its first terminal's live
+ * folder, else where it was made, keyed with its machine.
+ * @param s A space
+ * @param ps panes(), read once by the caller
+ * @returns JSON `[machine, folder]`
+ */
+const placeKey = (s, ps) => {
+  const tabs = new Set((s.tabs ?? []).map((c) => c.id));
+  return JSON.stringify([s.machine ?? null, ps.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s.folder]);
+};
 
 function lead(tab, all = panes()) {
   const mine = all.filter(p => p.tab === tab.id && p.terminal);
@@ -78,7 +91,58 @@ export default class Agents extends View {
     this.pendingPins = JSON.parse(localStorage.getItem("pins") ?? "[]");
     if (!this.pendingPins.length) localStorage.removeItem("pins");
     this.migratingPins = new Set();
+    // placeKey -> { repo, linked } from git, null when not a repo; absent until looked up.
+    this.repos = {};
+    this.asking = new Set();
     cx.timer.every(30000, (cx) => cx.notify());
+  }
+
+  // Asks git which repo a place belongs to and whether it is a linked worktree.
+  lookupRepo(key, cx) {
+    if (key in this.repos || this.asking.has(key)) return;
+    this.asking.add(key);
+    const [on, cwd] = JSON.parse(key);
+    cx.spawn(async (cx) => {
+      try {
+        const [top, common] = await Promise.all([
+          exec("git", ["rev-parse", "--path-format=absolute", "--show-toplevel"], { cwd, on }),
+          exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, on }),
+        ]);
+        if (top.code !== 0 || common.code !== 0) this.repos[key] = null;
+        else {
+          const repo = common.stdout.replace(/\n$/, "");
+          this.repos[key] = { repo: JSON.stringify([on, repo]), linked: repo !== `${top.stdout.replace(/\n$/, "")}/.git` };
+        }
+      } catch {
+        // The machine is away: leave it unknown so a later render asks again.
+      }
+      this.asking.delete(key);
+      cx.notify();
+    });
+  }
+
+  /**
+   * Each space's home for grouping: a worktree space goes under its repo's main checkout
+   * space, as the spaces sidebar nests it, or under the repo's name when no space holds it.
+   * @returns Space id to `{ id, name }`
+   */
+  homes(cx) {
+    const sp = spaces(), ps = panes();
+    const info = new Map(sp.map((s) => {
+      const key = placeKey(s, ps);
+      this.lookupRepo(key, cx);
+      return [s.id, this.repos[key] ?? null];
+    }));
+    const mains = new Map();
+    for (const s of sp) {
+      const g = info.get(s.id);
+      if (g && !g.linked && !mains.has(g.repo)) mains.set(g.repo, { id: s.id, name: s.name });
+    }
+    return new Map(sp.map((s) => {
+      const g = info.get(s.id);
+      if (!g?.linked) return [s.id, { id: s.id, name: s.name }];
+      return [s.id, mains.get(g.repo) ?? { id: g.repo, name: base(JSON.parse(g.repo)[1]).replace(/\.git$/, "") }];
+    }));
   }
 
   // Stamps agents whose state changed. Done and idle count as one: looking at a
@@ -180,14 +244,18 @@ export default class Agents extends View {
 
   /**
    * Live terminals that another terminal started (`parent` is set), grouped under their
-   * top-most live ancestor and ordered most urgent first. A terminal whose starter has
-   * ended heads its own group.
+   * top-most live ancestor, then by the space each started subtree sits in, both ordered
+   * most urgent first. A terminal whose starter has ended heads its own group.
    * @param all Every core terminal
    * @param parentOf Live address to its starter's address, or null
-   * @param agentList Agents, for naming a starter that is one
-   * @returns Groups of `{ id, label, program, entries }`; entries are tree rows for subRow
+   * @param agentList Agents, for naming a starter that is one and placing terminals in spaces
+   * @param homes Space id to its repo's main space `{ id, name }` (see homes()), which
+   *   heads a worktree space's group and starter labels, with the worktree in `sub`
+   * @returns Groups of `{ id, label, sub, program, entries, spaces }`; entries are tree rows
+   *   for subRow, and `spaces` splits them into `{ id, label, sub, entries }`; `sub` is a
+   *   header's second line, or null
    */
-  families(all, parentOf, agentList) {
+  families(all, parentOf, agentList, homes) {
     const topOf = (addr) => {
       let cur = addr;
       for (let i = 0; i < 32; i++) {
@@ -200,15 +268,49 @@ export default class Agents extends View {
     const roots = [...new Set([...parentOf].filter(([, p]) => p).map(([addr]) => topOf(addr)))];
     const byAddress = new Map(all.map((k) => [k.address, k]));
     const agentOf = new Map(agentList.map((a) => [a.address, a]));
+    // A terminal without a pane has no space of its own; it shows in its nearest ancestor's.
+    // A worktree space reads as its repo's space over the worktree.
+    const spaceOf = (addr) => {
+      for (let cur = addr, i = 0; cur && i < 32; cur = parentOf.get(cur), i++) {
+        const a = agentOf.get(cur);
+        if (!a) continue;
+        const home = homes.get(a.space);
+        return home && home.id !== a.space ? { id: a.space, name: home.name, sub: a.space_name } : { id: a.space, name: a.space_name };
+      }
+      return { id: "", name: "Elsewhere" };
+    };
+    const order = new Map(spaces().map((s, i) => [s.id, i]));
+    const rankOfEntries = (entries) => Math.max(0, ...entries.map((e) => RANK[kidStatus(e.t, this.listed)] ?? 0));
     const out = roots.map((root) => {
       const term = byAddress.get(root);
       const orphan = Boolean(parentOf.get(root));
-      const entries = orphan ? [{ t: term, lines: [] }, ...this.tree(all, root, [""])] : this.tree(all, root);
+      const tops = orphan ? [term] : all.filter((k) => k.parent === root && k.state === "live");
+      const bySpace = new Map();
+      for (const k of tops) {
+        const sp = spaceOf(k.address);
+        if (!bySpace.has(sp.id)) bySpace.set(sp.id, { ...sp, tops: [] });
+        bySpace.get(sp.id).tops.push(k);
+      }
+      // Tree lines restart in each space, so its last subtree closes with \u2514.
+      const groups = [...bySpace.values()].map((sp) => {
+        const entries = orphan
+          ? [{ t: term, lines: [] }, ...this.tree(all, root, [""])]
+          : sp.tops.flatMap((k, i) => {
+            const last = i === sp.tops.length - 1;
+            return [{ t: k, lines: [last ? "\u2514" : "\u251c"] }, ...this.tree(all, k.address, [last ? "" : "\u2502"])];
+          });
+        return { id: `fam-${root}-sp-${sp.id}`, label: sp.name || "Elsewhere", sub: sp.sub ?? null, entries, rank: rankOfEntries(entries), at: order.get(sp.id) ?? Infinity };
+      }).sort((x, y) => y.rank - x.rank || x.at - y.at);
+      const entries = groups.flatMap((g) => g.entries);
       const a = agentOf.get(root);
-      const name = a ? [a.space_name, a.tab_name].filter((x) => x && !/^\d+$/.test(x)).join(" \u00b7 ") || a.program?.name : term?.name || term?.program?.name || root;
+      // "via <space>" over the worktree and tab, when there are any.
+      const home = a && homes.get(a.space);
+      const worktree = home && home.id !== a.space;
+      const named = (x) => x && !/^\d+$/.test(x);
+      const name = a ? (worktree ? home.name : a.space_name) || a.program?.name : term?.name || term?.program?.name || root;
       const label = orphan ? `via ${parentOf.get(root)} (ended)` : `via ${name || root}`;
-      const rank = Math.max(0, ...entries.map((e) => RANK[kidStatus(e.t, this.listed)] ?? 0));
-      return { id: `fam-${root}`, label, program: orphan ? null : (a?.program ?? term?.program), entries, rank };
+      const sub = orphan || !a ? null : [worktree ? a.space_name : null, a.tab_name].filter(named).join(" \u00b7 ") || null;
+      return { id: `fam-${root}`, label, sub, program: orphan ? null : (a?.program ?? term?.program), entries, spaces: groups, rank: rankOfEntries(entries) };
     });
     return out.filter((f) => f.entries.length).sort((x, y) => y.rank - x.rank);
   }
@@ -276,7 +378,7 @@ export default class Agents extends View {
     if (flat) list = [...list].sort((x, y) => rankOf(y) - rankOf(x) || this.since(y) - this.since(x) || y.seq - x.seq);
     const pinned = list.filter((a) => a.pinned);
     let rest = list.filter((a) => !a.pinned);
-    const families = byStarter ? this.families(all, parentOf, list) : [];
+    const families = byStarter ? this.families(all, parentOf, list, this.homes(cx)) : [];
     if (byStarter) {
       rest = rest.filter((a) => !parentOf.get(a.address));
       const started = families.flatMap((f) => f.entries.map((e) => e.t.address));
@@ -410,15 +512,23 @@ export default class Agents extends View {
         .child(this.status(t, a, byPriority && !isPinned));
     };
 
-    // In the starter view, each agent-started group sits under the terminal that started it.
-    const familyHeader = (f) => {
+    // How many are in each status, most urgent first, as "1 ⟳  2 ○".
+    const tally = (statuses) => {
+      const counts = {};
+      for (const s of statuses) { const k = s in RANK ? s : "idle"; counts[k] = (counts[k] ?? 0) + 1; }
+      return h_flex().flex_none().gap(8).items_center().children(Object.keys(RANK).sort((x, y) => RANK[y] - RANK[x]).filter((s) => counts[s]).map((s) =>
+        h_flex().gap(3).items_center().child(div().text_size(11).text_color(t.dim).child(String(counts[s]))).child(this.status(t, { status: s }, true))));
+    };
+
+    // In the starter view, each agent-started group sits under the terminal that started it,
+    // split by space; `nested` indents a space's header under its starter's.
+    const familyHeader = (f, nested = false) => {
       const open = !this.folded.has(f.id);
-      const top = f.entries.reduce((m, e) => Math.max(m, RANK[kidStatus(e.t, this.listed)] ?? 0), 0);
-      const topStatus = Object.keys(RANK).find((k) => RANK[k] === top);
       return h_flex()
         .id(f.id)
-        .px(8)
-        .h(26)
+        .pl(nested ? 22 : 8)
+        .pr(8)
+        .h(f.sub ? 38 : 26)
         .flex_none()
         .gap(7)
         .items_center()
@@ -432,9 +542,10 @@ export default class Agents extends View {
         })
         .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(11).flex_none().text_color(t.dim))
         .when(Boolean(f.program), (el) => { const pic = icon(f.program, 13, t.muted); return pic ? el.child(pic) : el; })
-        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(f.label))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child(String(f.entries.length)))
-        .when(!open && top > RANK.idle, (el) => el.child(this.status(t, { status: topStatus }, true)));
+        .child(v_flex().flex_1().min_w(0)
+          .child(div().truncate().text_color(t.muted).child(f.label))
+          .when(Boolean(f.sub), (el) => el.child(div().truncate().text_color(t.dim).child(f.sub))))
+        .child(tally(f.entries.map((e) => kidStatus(e.t, this.listed))));
     };
 
     // Groups in list order: spaces (grouped) or priority sections. Agents of a
@@ -447,7 +558,10 @@ export default class Agents extends View {
         label: "Started by agents",
         status: null,
         members: families.flatMap((f) => f.entries.map((e) => ({ status: kidStatus(e.t, this.listed) }))),
-        rows: () => families.flatMap((f) => [familyHeader(f), ...(this.folded.has(f.id) ? [] : f.entries.map((e) => this.subRow(t, e, shown, true)))]),
+        rows: () => families.flatMap((f) => [familyHeader(f), ...(this.folded.has(f.id) ? [] : f.spaces.flatMap((sp) => [
+          familyHeader(sp, true),
+          ...(this.folded.has(sp.id) ? [] : sp.entries.map((e) => this.subRow(t, e, shown, true))),
+        ]))]),
       });
     }
     for (const a of byStarter ? [] : rest) {
@@ -457,10 +571,10 @@ export default class Agents extends View {
       else groups.push({ id, label: byPriority ? SECTION[r] : a.space_name || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });
     }
 
-    // A group's header; it folds the group. Folded, it says how many and the most urgent state.
+    // A group's header; it folds the group. It counts members by status, except in a
+    // priority section, where they share one; folded, it always counts.
     const header = (g) => {
       const open = !this.folded.has(g.id);
-      const top = g.members.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
       return h_flex()
         .id(g.id)
         .px(8)
@@ -478,11 +592,10 @@ export default class Agents extends View {
           cx.notify();
         })
         .child(div().truncate().text_color(t[g.status] ?? t.dim).child(g.label))
-        .when(flat || !open, (el) => el.child(div().text_color(t.dim).child(String(g.members.length))))
+        .when(Boolean(g.status) && (flat || !open), (el) => el.child(div().text_color(t.dim).child(String(g.members.length))))
         .child(div().flex_1())
-        .when(!open, (el) => el
-          .when(!flat && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
-          .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
+        .when(!g.status && (flat || !open), (el) => el.child(tally(g.members.map((a) => a.status))))
+        .when(!open, (el) => el.child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
     };
     const rows = collapsed
       ? list.flatMap(withKids)
