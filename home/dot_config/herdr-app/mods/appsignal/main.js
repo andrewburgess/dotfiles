@@ -3,7 +3,7 @@
 
 import { View, div, svg, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView } from "gpui-base";
-import { exec, theme, notify, shared, setShared, readTextFile, home } from "herdr";
+import { exec, theme, settings, notify, shared, setShared, readTextFile, home } from "herdr";
 
 const CLI = "appsignal-cli";
 const DEFAULT_APP = { id: "6386678fd2a5e4772f8e68a1", name: "Hugolith", environment: "production" };
@@ -614,10 +614,11 @@ function bandPath(xs, lower, upper) {
  * Lays out a chart's visible series as paths. Built once per data load and reused on redraws.
  * @param v Dashboard visual
  * @param d Output of buildChart
+ * @param picked Series labels to show exclusively; the first MAX_SERIES series when empty
  * @returns `{ shown, hidden, lo, hi, grid, lines, bands }`
  */
-function chartGeometry(v, d) {
-  const shown = d.series.slice(0, MAX_SERIES);
+function chartGeometry(v, d, picked) {
+  const shown = picked?.size ? d.series.filter((s) => picked.has(s.label)) : d.series.slice(0, MAX_SERIES);
   const n = d.times.length;
   const xs = d.times.map((_t, i) => (n > 1 ? i / (n - 1) : 0.5));
   const stacked = v.display === "AREA" || v.display === "AREA_RELATIVE";
@@ -1078,7 +1079,7 @@ export default class AppSignal extends View {
             if (!Array.isArray(v.metrics) || v.metrics.length === 0) throw new Error("This chart has no metrics to show");
             const d = buildChart(v, await query(v));
             if (!live()) return;
-            d.geometry = v.__typename === "VisualNumber" ? null : chartGeometry(v, d);
+            d.geometry = v.__typename === "VisualNumber" ? null : chartGeometry(v, d, this.picked?.get(v.id));
             c.data[v.id] = d;
             c.errors[v.id] = null;
           } catch (e) {
@@ -1127,7 +1128,7 @@ export default class AppSignal extends View {
       const group = slash > 0 ? d.title.slice(0, slash) : "";
       groups.set(group, [...(groups.get(group) ?? []), d]);
     }
-    return v_flex().id("dash-picker").max_h(320).overflow_y_scrollbar().gap(6).p(8).rounded(8).bg(t.background).border_1().border_color(t.border)
+    return v_flex().id("dash-picker").max_h(Math.max(120, (this.panelHeight ?? 600) / (Number(settings().zoom) || 1) - 200)).overflow_y_scrollbar().gap(6).p(8).rounded(8).bg(t.background).border_1().border_color(t.border)
       .children([...groups.entries()].map(([group, list], gi) => v_flex().gap(4)
         .when(Boolean(group), (el) => el.child(div().text_size(13).font_semibold().text_color(t.muted).child(group)))
         .child(h_flex().gap(4).flex_wrap().children(list.map((d, di) => this.chip(t, `dash-${gi}-${di}`,
@@ -1167,6 +1168,23 @@ export default class AppSignal extends View {
     return [t.accent, t.ansi2, t.ansi3, t.ansi5, t.ansi1, t.ansi6, t.ansi10, t.ansi9];
   }
 
+  /** Toggles one series in a chart's exclusive selection and redraws it. */
+  pickSeries(v, d, label, cx) {
+    this.picked = new Map(this.picked);
+    const set = new Set(this.picked.get(v.id));
+    if (!set.delete(label)) set.add(label);
+    this.picked.set(v.id, set);
+    d.geometry = chartGeometry(v, d, set);
+    cx.notify();
+  }
+
+  clearPicked(v, d, cx) {
+    this.picked = new Map(this.picked);
+    this.picked.delete(v.id);
+    d.geometry = chartGeometry(v, d);
+    cx.notify();
+  }
+
   renderChart(t, v, d, error) {
     const number = v.__typename === "VisualNumber";
     const g = d?.geometry;
@@ -1176,6 +1194,9 @@ export default class AppSignal extends View {
     const span = d && d.times.length > 1 ? d.times[d.times.length - 1] - d.times[0] : 0;
     const head = hoverAt != null ? chartTime(d.times[hoverAt], Infinity) : single && !number ? formatMetric(d.series[0].last, v, d.resolution) : "";
     const colors = this.palette(t);
+    const picked = this.picked?.get(v.id);
+    const filtered = Boolean(picked?.size);
+    const open = Boolean(this.expanded?.has(v.id));
     const card = v_flex().p(10).gap(6).flex_none().rounded(8).border_1().border_color(t.border).bg(t.background)
       .child(h_flex().gap(8).items_center()
         .child(div().flex_1().min_w(0).truncate().text_size(14).font_semibold().text_color(t.foreground).child(v.title ?? "Untitled"))
@@ -1210,15 +1231,30 @@ export default class AppSignal extends View {
       .child(div().child(d.times.length > 2 ? chartTime(d.times[Math.floor((d.times.length - 1) / 2)], span) : ""))
       .child(div().child(d.times.length > 1 ? chartTime(d.times[d.times.length - 1], span) : ""));
     const legend = v_flex().gap(1)
-      .when(!single, (el) => el.children(g.shown.map((s, k) => h_flex().gap(6).items_center().text_size(12)
-        .child(div().size(8).rounded(2).flex_none().bg(colors[k % colors.length]))
-        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(s.label))
-        .child(div().flex_none().text_color(t.foreground).child(formatMetric(at(s), v, d.resolution))))))
+      .when(!single, (el) => el.children((open || filtered ? d.series : g.shown).map((s, k) => {
+        const idx = g.shown.indexOf(s);
+        return h_flex().id(`series-${v.id}-${k}`).gap(6).items_center().text_size(12)
+        .on_click((_e, cx) => this.pickSeries(v, d, s.label, cx))
+        .child(div().size(8).rounded(2).flex_none().bg(idx >= 0 ? colors[idx % colors.length] : t.dim))
+        .child(div().flex_1().min_w(0).truncate().text_color(filtered && idx < 0 ? t.dim : t.muted).child(s.label))
+        .child(div().flex_none().text_color(t.foreground).child(formatMetric(at(s), v, d.resolution)));
+      })))
       .when(single && hoverAt != null, (el) => el.child(h_flex().gap(6).items_center().text_size(12)
         .child(div().size(8).rounded(2).flex_none().bg(colors[0]))
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(d.series[0].label))
         .child(div().flex_none().text_color(t.foreground).child(formatMetric(at(d.series[0]), v, d.resolution)))))
-      .when(g.hidden > 0, (el) => el.child(div().pl(14).text_size(12).text_color(t.dim).child(`+${g.hidden} more`)));
+      .when(filtered, (el) => el.child(div().id(`clear-${v.id}`).pl(14).text_size(12).text_color(t.dim)
+        .hover((s) => s.text_color(t.foreground))
+        .on_click((_e, cx) => this.clearPicked(v, d, cx))
+        .child("Clear selection")))
+      .when(!filtered && g.hidden > 0, (el) => el.child(div().id(`more-${v.id}`).pl(14).text_size(12).text_color(t.dim)
+        .hover((s) => s.text_color(t.foreground))
+        .on_click((_e, cx) => {
+          this.expanded = new Set(this.expanded);
+          if (!this.expanded.delete(v.id)) this.expanded.add(v.id);
+          cx.notify();
+        })
+        .child(open ? "Show less" : `+${g.hidden} more`)));
     return card.child(v_flex().gap(2).child(plot).child(axis)).child(legend);
   }
 
@@ -1365,6 +1401,7 @@ export default class AppSignal extends View {
     const refreshing = this.loading === this.gen || (charts && Boolean(this.chart?.loading));
     const empty = mine ? "Nothing assigned to you" : tab === "exceptions" ? "No open or WIP exceptions" : "No open or WIP alerts";
     return v_flex().id("root").size_full().min_h(0).bg(t.surface).text_size(15)
+      .on_size_change((size, cx) => { if (size.height !== this.panelHeight) { this.panelHeight = size.height; cx.notify(); } })
       .child(v_flex().p(10).gap(8).flex_none().border_b(1).border_color(t.border)
         .child(h_flex().gap(6).items_center()
           .child(svg("mods/appsignal/appsignal.svg").size(16).flex_none().text_color(t.muted))
